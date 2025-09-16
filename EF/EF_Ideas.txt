@@ -1,0 +1,43 @@
+Nuget packages
+Provider
+Ef.Core.Design
+Ef.Core.Tools
+
+https://www.learnentityframeworkcore.com/
+
+comando nuget per generare model da database
+Scaffold-DbContext "Server=.\;Database=AdventureWorksLT2012;Trusted_Connection=True;" Microsoft.EntityFrameworkCore.SqlServer -OutputDir Model -Context "AdventureContext"
+
+
+Generazione id custom
+HasValueGenerator / HasValueGeneratorFactory
+https://github.com/karenpayneoregon/ef-core-HasValueGenerator-1/blob/master/EntityOperations/Context/CustomerContext.cs
+
+cose interessanti
+https://learn.microsoft.com/en-us/ef/core/querying/filters
+https://medium.com/@bART.Solutions/build-multi-tenant-applications-with-ef-core-30575f3c8ec
+
+interceptors
+IMaterializationInterceptor
+https://abp.io/community/articles/injecting-service-dependencies-to-entities-with-entity-framework-core-7.0-db6vdh4s
+
+IEntityTypeConfiguration DI
+https://github.com/dotnet/efcore/issues/23103
+
+
+Punti da toccare
+- Termini fondamentali e come ragiona
+	- context ed uso
+	- classi entity
+	- configurazione entity
+	- query
+	- salvataggi
+	- audit field
+	- notracking
+- Layerizzazione respository
+- Testing con inmemory
+
+DI con container nativo
+https://www.devleader.ca/2024/02/21/iservicecollection-in-c-simplified-beginners-guide-for-dependency-injection/
+scrutor che estende di nativa ed eventuale autofac per cose avanzate
+https://dev.to/devleader/scrutor-vs-autofac-in-c-what-you-need-to-know-5a5g

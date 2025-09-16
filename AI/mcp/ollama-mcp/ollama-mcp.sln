@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36414.22 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ollama-mcp", "ollama-mcp.csproj", "{F9BCB1EC-4D42-3591-756D-D22B54393F56}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MssqlMcp", "..\MssqlMcp\MssqlMcp.csproj", "{264AB086-FABE-4A7D-D567-73E10E989492}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F9BCB1EC-4D42-3591-756D-D22B54393F56}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F9BCB1EC-4D42-3591-756D-D22B54393F56}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F9BCB1EC-4D42-3591-756D-D22B54393F56}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F9BCB1EC-4D42-3591-756D-D22B54393F56}.Release|Any CPU.Build.0 = Release|Any CPU
+		{264AB086-FABE-4A7D-D567-73E10E989492}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{264AB086-FABE-4A7D-D567-73E10E989492}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{264AB086-FABE-4A7D-D567-73E10E989492}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{264AB086-FABE-4A7D-D567-73E10E989492}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {38D9B178-B0F4-454B-96B5-7B148F6C1233}
+	EndGlobalSection
+EndGlobal

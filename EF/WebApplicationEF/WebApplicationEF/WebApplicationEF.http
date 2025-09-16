@@ -1,0 +1,42 @@
+@WebApplicationEF_HostAddress = http://localhost:5002
+
+
+POST {{WebApplicationEF_HostAddress}}/api/zoos
+Content-Type: application/json
+
+{
+  "nome": "Zoo de São Paulo",
+  "citta": "São Paulo",
+  "nazione": "Brasiu"
+}
+
+###
+
+GET {{WebApplicationEF_HostAddress}}/api/zoos/
+Accept: application/json
+
+###
+
+DELETE {{WebApplicationEF_HostAddress}}/api/zoos/1
+Accept: application/json
+
+###
+
+POST {{WebApplicationEF_HostAddress}}/api/zoos/2/scimmia
+Content-Type: application/json
+
+{
+  "Nome": "jhonny",
+  "Specie": "macaco",
+  "Pelliccia": "marrone"
+}
+###
+
+POST {{WebApplicationEF_HostAddress}}/api/zoos/1/scimmia
+Content-Type: application/json
+
+{
+  "nome": "jhonny",
+  "Specie": "macaco",
+  "Pelliccia": "marrone"
+}
