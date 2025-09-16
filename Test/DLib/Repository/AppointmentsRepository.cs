@@ -9,69 +9,92 @@ namespace DLib.Repository
 {
   internal class AppointmentsRepository : IAppointmentsRepository
   {
-    public List<Slot> GetSlots(DateTime startTime, int days = 7)
+    public List<Event> GetEvents(DateTime startTime, int days = 7)
     {
 
-      List<Slot> sampleSlots = new List<Slot>();
+      List<Event> sampleDate = new List<Event>();
 
-      sampleSlots.Add(new Slot
+      // 16/9
+      sampleDate.Add(new Event
       {
         Day = new DateTime(2025, 9, 16),
         StartTime = new TimeSpan(9, 0, 0),
         EndTime = new TimeSpan(12, 0, 0),
-        Type = "opening",
+        Kind = "opening",
         Notes = "Sample opening slot"
       }); //3 hours -> 6 as
-      sampleSlots.Add(new Slot
+
+      sampleDate.Add(new Event
+      {
+        Day = new DateTime(2025, 9, 16),
+        StartTime = new TimeSpan(10, 0, 0),
+        EndTime = new TimeSpan(10, 30, 0),
+        Kind = "appointment",
+        Notes = "Sample appointment slot #overlaps"
+      });
+
+      sampleDate.Add(new Event
+      {
+        Day = new DateTime(2025, 9, 16),
+        StartTime = new TimeSpan(11, 0, 0),
+        EndTime = new TimeSpan(11, 30, 0),
+        Kind = "appointment",
+        Notes = "Sample appointment slot #overlaps"
+      });
+
+      sampleDate.Add(new Event
       {
         Day = new DateTime(2025, 9, 16),
         StartTime = new TimeSpan(14, 00, 0),
-        EndTime = new TimeSpan(15, 00, 0),
-        Type = "opening",
+        EndTime = new TimeSpan(18, 00, 0),
+        Kind = "opening",
         Notes = "Sample opening slot"
       }); //1 hour -> 2 as
-      sampleSlots.Add(new Slot
+      sampleDate.Add(new Event
       {
         Day = new DateTime(2025, 9, 16),
         StartTime = new TimeSpan(15, 0, 0),
         EndTime = new TimeSpan(16, 0, 0),
-        Type = "appointment",
+        Kind = "appointment",
         Notes = "Sample appointment slot"
        });
-      sampleSlots.Add(new Slot
+
+
+      // 17/9
+      sampleDate.Add(new Event
       {
         Day = new DateTime(2025, 9, 17),
         StartTime = new TimeSpan(16, 00, 0),
         EndTime = new TimeSpan(16, 30, 0),
-        Type = "opening",
+        Kind = "opening",
         Notes = "Sample opening slot"
       }); //30 minutes - 1 as
-      sampleSlots.Add(new Slot
+      sampleDate.Add(new Event
       {
         Day = new DateTime(2025, 9, 17),
         StartTime = new TimeSpan(16, 30, 0),
         EndTime = new TimeSpan(17, 0, 0),
-        Type = "appointment",
+        Kind = "appointment",
         Notes = "Sample appointment slot"
       });
-      sampleSlots.Add(new Slot
+      sampleDate.Add(new Event
       {
         Day = new DateTime(2025, 9, 17),
         StartTime = new TimeSpan(17, 00, 0),
         EndTime = new TimeSpan(18, 10, 0),
-        Type = "opening",
+        Kind = "opening",
         Notes = "Sample opening slot"
       }); //1h 10' - 2 as
-      sampleSlots.Add(new Slot
+      sampleDate.Add(new Event
       {
         Day = new DateTime(2025, 9, 21),
         StartTime = new TimeSpan(9, 0, 0),
         EndTime = new TimeSpan(12, 0, 0),
-        Type = "opening",
+        Kind = "opening",
         Notes = "Sample opening slot"
       }); //3 hours -> 6 as
 
-      return sampleSlots.Where(s => s.Day >= startTime.Date && s.Day <= startTime.AddDays(days)).ToList();
+      return sampleDate.Where(s => s.Day >= startTime.Date && s.Day <= startTime.AddDays(days)).ToList();
 
     }
   }

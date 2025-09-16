@@ -9,7 +9,7 @@ namespace DLib.Repository
 {
   internal interface IAppointmentsRepository
   {
-    List<Slot> GetSlots(DateTime startTime, int days = 7);
+    List<Event> GetEvents(DateTime startTime, int days = 7);
 
   }
 }

@@ -20,39 +20,72 @@ namespace DLib.Service
       _AppointmentsRepository = appointmentsRepository;
     }
 
-    public List<Slot> GetAvailableSlots(DateTime startTime, int days = 7)
+    public List<Event> GetAvailableSlots(DateTime startTime, int days = 7)
     {
 
       //all slots from repository
-      var allSlots = _AppointmentsRepository.GetSlots(startTime, days);
+      var events = _AppointmentsRepository.GetEvents(startTime, days);
 
-      List<Slot> availableSlots = new List<Slot>();
-      var openingSlots = allSlots.Where(s => s.Type == "opening");
+      List<Event> slots = new List<Event>();
+      var openings = events.Where(s => s.Kind == "opening").ToList();
+      var appointments = events.Where(s => s.Kind == "appointment").ToList();
+
+      List<Event> availableSlots = new List<Event>();
 
       int count = 0;
-      foreach (var item in openingSlots)
+      foreach (var opening in openings)
       {
         //divide into 30 min slots
-        var currentStartTime = item.StartTime;
-        while (currentStartTime.Add(TimeSpan.FromMinutes(AppointmentDuration.Minutes)) < item.EndTime)
+        var currentStartTime = opening.StartTime;
+        while (currentStartTime.Add(TimeSpan.FromMinutes(AppointmentDuration.Minutes)) <= opening.EndTime)
         {
           count++;
-          var s = new Slot
+          var e = new Event
           {
-            Day = item.Day,
+            Day = opening.Day,
             StartTime = currentStartTime,
             EndTime = currentStartTime.Add(TimeSpan.FromMinutes(AppointmentDuration.Minutes)),
-            Type = "available",
+            Kind = "available",
             Notes = $"Available slot #{count}"
           };
-          availableSlots.Add(s);
 
-          Console.WriteLine($"added available slot #{count} [{s.StartTime}-{s.EndTime}]");
+          slots.Add(e);
+
+          Console.WriteLine($"added available slot #{count} [{e.StartTime}-{e.EndTime}]");
           currentStartTime = currentStartTime.Add(AppointmentDuration);
+        }
+      }
+
+      //rimozione slot in overlap con appuntamenti del giorno
+      foreach (var slot in slots)
+      {
+        if (appointments.Where(a => a.Day == slot.Day).Count(app => IsOverlapping(app, slot)) == 0)
+        {
+          availableSlots.Add(slot);
         }
       }
 
       return availableSlots;
     }
+
+
+    bool IsOverlapping(Event app, Event slot)
+    {
+
+      var appStart = app.StartTime;
+      var appEnd = app.EndTime;
+
+      var slotStart = slot.StartTime;
+      var slotEnd = slot.EndTime;
+
+      //l’appuntamento inizia prima che finisca lo slot
+      //e lo slot inizia prima che finisca l’appuntamento
+
+      bool isOverlapping = appStart < slotEnd && slotStart < appEnd;
+
+      return isOverlapping;
+    }
+
+
   }
 }

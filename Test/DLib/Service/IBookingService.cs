@@ -4,6 +4,6 @@ namespace DLib.Service
 {
   public interface IBookingService
   {
-    public List<Slot> GetAvailableSlots(DateTime startTime, int days = 7);
+    public List<Event> GetAvailableSlots(DateTime startTime, int days = 7);
   }
 }

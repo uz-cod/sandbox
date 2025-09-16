@@ -14,8 +14,7 @@ var serviceProvider = new ServiceCollection()
 
 //do the actual work here
 var bookingSvc = serviceProvider.GetService<IBookingService>();
-var res = bookingSvc.GetAvailableSlots(new DateTime(2025, 9, 16), 10);
-
+var res = bookingSvc.GetAvailableSlots(new DateTime(2025, 9, 16), 0);
 
 
 Console.WriteLine("Hello, World!");
