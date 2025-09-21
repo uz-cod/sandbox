@@ -7,9 +7,11 @@ using System.Threading.Tasks;
 
 namespace DLib.Repository
 {
-  internal interface IAppointmentsRepository
+  public interface IAppointmentsRepository
   {
-    List<Event> GetEvents(DateTime startTime, int days = 7);
+
+    List<Event> Events { get; set; }
+ //   List<Event> GetEvents(DateTime startTime, int days = 7);
 
   }
 }

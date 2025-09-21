@@ -2,19 +2,27 @@
 using DLib.Repository;
 using DLib.Service;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-
 
 var serviceProvider = new ServiceCollection()
-           .AddLogging()
-           .AddSingleton<IAppointmentsRepository, AppointmentsRepository>()
-           .AddSingleton<IBookingService, BookingService>()
-           .BuildServiceProvider();
+                      .AddLogging()
+                      .AddSingleton<IAppointmentsRepository, AppointmentsRepository>()
+                      .AddSingleton<IBookingService, BookingService>()
+                      .BuildServiceProvider();
 
-//do the actual work here
+
+var repo = serviceProvider.GetRequiredService<IAppointmentsRepository>();
+repo.Events = (repo as AppointmentsRepository).SampleEvents;
+
 var bookingSvc = serviceProvider.GetService<IBookingService>();
+
 var res = bookingSvc.GetAvailableSlots(new DateTime(2025, 9, 16), 0);
+
+var resGrouped = res.GroupBy(x => x.Day).ToList();
+
+foreach (var item in resGrouped)
+{
+  Console.WriteLine($"day: {item.Key.Date} => {string.Join(",", item.Select(x => $"{x.StartTime}-{x.EndTime}").ToList()) } ");
+}
 
 
 Console.WriteLine("Hello, World!");

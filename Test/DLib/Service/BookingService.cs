@@ -8,10 +8,10 @@ using System.Threading.Tasks;
 
 namespace DLib.Service
 {
-  internal partial class BookingService : IBookingService
+  public class BookingService : IBookingService
   {
 
-    private readonly TimeSpan AppointmentDuration = TimeSpan.FromMinutes(30);
+    public TimeSpan DefaultAppointmentDuration { get; set; } = TimeSpan.FromMinutes(30);
 
     IAppointmentsRepository _AppointmentsRepository;
 
@@ -23,8 +23,10 @@ namespace DLib.Service
     public List<Event> GetAvailableSlots(DateTime startTime, int days = 7)
     {
 
+      //return GetAvailableSlotsV2(startDay: startTime, days: days);
+
       //all slots from repository
-      var events = _AppointmentsRepository.GetEvents(startTime, days);
+      var events = _AppointmentsRepository.Events;
 
       List<Event> slots = new List<Event>();
       var openings = events.Where(s => s.Kind == "opening").ToList();
@@ -35,16 +37,15 @@ namespace DLib.Service
       int count = 0;
       foreach (var opening in openings)
       {
-        //divide into 30 min slots
         var currentStartTime = opening.StartTime;
-        while (currentStartTime.Add(TimeSpan.FromMinutes(AppointmentDuration.Minutes)) <= opening.EndTime)
+        while (currentStartTime.Add(DefaultAppointmentDuration) <= opening.EndTime)
         {
           count++;
           var e = new Event
           {
             Day = opening.Day,
             StartTime = currentStartTime,
-            EndTime = currentStartTime.Add(TimeSpan.FromMinutes(AppointmentDuration.Minutes)),
+            EndTime = currentStartTime.Add(DefaultAppointmentDuration),
             Kind = "available",
             Notes = $"Available slot #{count}"
           };
@@ -52,7 +53,7 @@ namespace DLib.Service
           slots.Add(e);
 
           Console.WriteLine($"added available slot #{count} [{e.StartTime}-{e.EndTime}]");
-          currentStartTime = currentStartTime.Add(AppointmentDuration);
+          currentStartTime = currentStartTime.Add(DefaultAppointmentDuration);
         }
       }
 
@@ -68,6 +69,60 @@ namespace DLib.Service
       return availableSlots;
     }
 
+
+    public List<Event> GetAvailableSlotsV2(DateTime startDay, int days = 7)
+    {
+      var events = _AppointmentsRepository.Events;
+
+      // Separiamo subito openings e appointments per giorno
+      var openingsByDay = events
+          .Where(e => e.Kind == "opening")
+          .GroupBy(e => e.Day.Date)
+          .ToDictionary(g => g.Key, g => g.ToList());
+
+      var appointmentsByDay = events
+          .Where(e => e.Kind == "appointment")
+          .GroupBy(e => e.Day.Date)
+          .ToDictionary(g => g.Key, g => g.ToList());
+
+      var availableSlots = new List<Event>();
+      int count = 0;
+
+      foreach (var kvp in openingsByDay)
+      {
+        var day = kvp.Key;
+        var openings = kvp.Value;
+        appointmentsByDay.TryGetValue(day, out var appointments);
+
+        foreach (var opening in openings)
+        {
+          var openingStart = day + opening.StartTime;
+          var openingEnd = day + opening.EndTime;
+
+          for (var currentStart = openingStart;
+               currentStart.Add(DefaultAppointmentDuration) <= openingEnd;
+               currentStart = currentStart.Add(DefaultAppointmentDuration))
+          {
+            var slot = new Event
+            {
+              Day = day,
+              StartTime = currentStart.TimeOfDay,
+              EndTime = currentStart.Add(DefaultAppointmentDuration).TimeOfDay,
+              Kind = "available",
+              Notes = $"Available slot #{++count}"
+            };
+
+            // Skip overlap check if no appointments that day
+            if (appointments == null || !appointments.Any(app => IsOverlapping(app, slot)))
+            {
+              availableSlots.Add(slot);
+            }
+          }
+        }
+      }
+
+      return availableSlots;
+    }
 
     bool IsOverlapping(Event app, Event slot)
     {
