@@ -20,16 +20,16 @@ namespace DLib.Service
       _AppointmentsRepository = appointmentsRepository;
     }
 
-    public List<Event> GetAvailableSlots(DateTime startTime, int days = 7)
+    public List<AvailableSlot> GetAvailableSlots(DateTime startTime, int days = 7)
     {
       //all slots from repository
       var events = _AppointmentsRepository.Events;
 
-      List<Event> slots = new List<Event>();
-      var openings = events.Where(s => s.Kind == EvKind.Opening).ToList();
-      var appointments = events.Where(s => s.Kind == EvKind.Appointment).ToList();
+      List<AvailableSlot> slots = new List<AvailableSlot>();
+      var openings = events.OfType<Opening>().ToList();
+      var appointments = events.OfType<Appointment>().ToList();
 
-      List<Event> availableSlots = new List<Event>();
+      List<AvailableSlot> availableSlots = new List<AvailableSlot>();
 
       int count = 0;
       foreach (var opening in openings)
@@ -38,12 +38,12 @@ namespace DLib.Service
         while (currentStartTime.Add(DefaultAppointmentDuration) <= opening.EndTime)
         {
           count++;
-          var e = new Event
+          var e = new AvailableSlot
           {
             Day = opening.Day,
             StartTime = currentStartTime,
             EndTime = currentStartTime.Add(DefaultAppointmentDuration),
-            Kind = EvKind.AvailableSlot,
+           // Kind = EvKind.AvailableSlot,
             Notes = $"Available slot #{count}"
           };
 
@@ -67,22 +67,22 @@ namespace DLib.Service
     }
 
 
-    public List<Event> GetAvailableSlotsV2(DateTime startDay, int days = 7)
+    public List<AvailableSlot> GetAvailableSlotsV2(DateTime startDay, int days = 7)
     {
       var events = _AppointmentsRepository.Events;
 
       // Separiamo subito openings e appointments per giorno
       var openingsByDay = events
-          .Where(e => e.Kind == EvKind.Opening)
+          .OfType<Opening>()
           .GroupBy(e => e.Day.Date)
           .ToDictionary(g => g.Key, g => g.ToList());
 
       var appointmentsByDay = events
-          .Where(e => e.Kind == EvKind.Appointment)
+          .OfType<Appointment>() 
           .GroupBy(e => e.Day.Date)
           .ToDictionary(g => g.Key, g => g.ToList());
 
-      var availableSlots = new List<Event>();
+      var availableSlots = new List<AvailableSlot>();
       int count = 0;
 
       foreach (var kvp in openingsByDay)
@@ -101,12 +101,12 @@ namespace DLib.Service
                currentStart.Add(DefaultAppointmentDuration) <= openingEnd;
                currentStart = currentStart.Add(DefaultAppointmentDuration))
           {
-            var slot = new Event
+            var slot = new AvailableSlot
             {
               Day = day,
               StartTime = currentStart.TimeOfDay,
               EndTime = currentStart.Add(DefaultAppointmentDuration).TimeOfDay,
-              Kind = EvKind.AvailableSlot,
+            //  Kind = EvKind.AvailableSlot,
               Notes = $"Available slot #{++count}"
             };
 

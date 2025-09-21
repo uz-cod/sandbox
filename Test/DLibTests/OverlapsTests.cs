@@ -8,12 +8,12 @@ namespace DoctorSlots.Tests
   public class OverlapTests
   {
     private Event MakeEvent(int startHour, int endHour) =>
-        new Event
+        new Appointment
         {
           Day = new DateTime(2025, 9, 21),
           StartTime = new TimeSpan(startHour, 0, 0),
           EndTime = new TimeSpan(endHour, 0, 0),
-          Kind = EvKind.Appointment
+     //     Kind = EvKind.Appointment
         };
 
     private bool IsOverlapping(Event app, Event slot)

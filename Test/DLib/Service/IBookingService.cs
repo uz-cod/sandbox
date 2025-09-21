@@ -7,6 +7,6 @@ namespace DLib.Service
 
     TimeSpan DefaultAppointmentDuration { get; set; }
 
-    public List<Event> GetAvailableSlots(DateTime startTime, int days = 7);
+    public List<AvailableSlot> GetAvailableSlots(DateTime startTime, int days = 7);
   }
 }
