@@ -13,7 +13,7 @@ namespace DoctorSlots.Tests
           Day = new DateTime(2025, 9, 21),
           StartTime = new TimeSpan(startHour, 0, 0),
           EndTime = new TimeSpan(endHour, 0, 0),
-          Kind = "appointment"
+          Kind = EvKind.Appointment
         };
 
     private bool IsOverlapping(Event app, Event slot)

@@ -22,15 +22,12 @@ namespace DLib.Service
 
     public List<Event> GetAvailableSlots(DateTime startTime, int days = 7)
     {
-
-      //return GetAvailableSlotsV2(startDay: startTime, days: days);
-
       //all slots from repository
       var events = _AppointmentsRepository.Events;
 
       List<Event> slots = new List<Event>();
-      var openings = events.Where(s => s.Kind == "opening").ToList();
-      var appointments = events.Where(s => s.Kind == "appointment").ToList();
+      var openings = events.Where(s => s.Kind == EvKind.Opening).ToList();
+      var appointments = events.Where(s => s.Kind == EvKind.Appointment).ToList();
 
       List<Event> availableSlots = new List<Event>();
 
@@ -46,7 +43,7 @@ namespace DLib.Service
             Day = opening.Day,
             StartTime = currentStartTime,
             EndTime = currentStartTime.Add(DefaultAppointmentDuration),
-            Kind = "available",
+            Kind = EvKind.AvailableSlot,
             Notes = $"Available slot #{count}"
           };
 
@@ -76,12 +73,12 @@ namespace DLib.Service
 
       // Separiamo subito openings e appointments per giorno
       var openingsByDay = events
-          .Where(e => e.Kind == "opening")
+          .Where(e => e.Kind == EvKind.Opening)
           .GroupBy(e => e.Day.Date)
           .ToDictionary(g => g.Key, g => g.ToList());
 
       var appointmentsByDay = events
-          .Where(e => e.Kind == "appointment")
+          .Where(e => e.Kind == EvKind.Appointment)
           .GroupBy(e => e.Day.Date)
           .ToDictionary(g => g.Key, g => g.ToList());
 
@@ -92,7 +89,8 @@ namespace DLib.Service
       {
         var day = kvp.Key;
         var openings = kvp.Value;
-        appointmentsByDay.TryGetValue(day, out var appointments);
+        // appointmentsByDay.TryGetValue(day, out var appointments);
+        var appointments = appointmentsByDay[day];
 
         foreach (var opening in openings)
         {
@@ -108,7 +106,7 @@ namespace DLib.Service
               Day = day,
               StartTime = currentStart.TimeOfDay,
               EndTime = currentStart.Add(DefaultAppointmentDuration).TimeOfDay,
-              Kind = "available",
+              Kind = EvKind.AvailableSlot,
               Notes = $"Available slot #{++count}"
             };
 
@@ -135,9 +133,7 @@ namespace DLib.Service
 
       //l’appuntamento inizia prima che finisca lo slot
       //e lo slot inizia prima che finisca l’appuntamento
-
       bool isOverlapping = appStart < slotEnd && slotStart < appEnd;
-
       return isOverlapping;
     }
 
