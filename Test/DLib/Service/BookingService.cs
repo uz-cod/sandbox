@@ -30,7 +30,6 @@ namespace DLib.Service
       var appointments = events.OfType<Appointment>().ToList();
 
       List<AvailableSlot> availableSlots = new List<AvailableSlot>();
-
       int count = 0;
       foreach (var opening in openings)
       {
@@ -43,7 +42,6 @@ namespace DLib.Service
             Day = opening.Day,
             StartTime = currentStartTime,
             EndTime = currentStartTime.Add(DefaultAppointmentDuration),
-           // Kind = EvKind.AvailableSlot,
             Notes = $"Available slot #{count}"
           };
 
@@ -53,7 +51,6 @@ namespace DLib.Service
           currentStartTime = currentStartTime.Add(DefaultAppointmentDuration);
         }
       }
-
       //rimozione slot in overlap con appuntamenti del giorno
       foreach (var slot in slots)
       {
@@ -62,7 +59,6 @@ namespace DLib.Service
           availableSlots.Add(slot);
         }
       }
-
       return availableSlots;
     }
 
