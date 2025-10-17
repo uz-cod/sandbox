@@ -33,7 +33,7 @@ namespace DLib.Model
     {
       return $"{EvType.ToString().Substring(0, 3)} - [{Day.Date.ToString("yyyy-MM-dd")}] {StartTime}-{EndTime}";
     }
-
+    
   }
 
   public class Opening : Event
@@ -48,9 +48,4 @@ namespace DLib.Model
   {
     public override string EvType => EvKind.Appointment.ToString();
   }
-
-
-
-
-
 }
