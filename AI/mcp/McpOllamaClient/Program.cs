@@ -14,7 +14,10 @@ class Program
 {
 
   private const string OLLAMA_URL = "http://localhost:11434";
-  private const string OLLAMA_MODEL = "qwen3:4b"; // Modello con tool calling
+   private const string OLLAMA_MODEL = "qwen3:8b"; // Modello con tool calling
+  //private const string OLLAMA_MODEL = "qwen3-vl:235b-cloud"; // Modello con tool calling
+  //private const string OLLAMA_MODEL = "mistral"; // Modello con tool calling
+  //private const string OLLAMA_MODEL = "mistral"; // Modello con tool calling
 
   static async Task Main(string[] args)
   {
@@ -28,6 +31,17 @@ class Program
     await orc.InitializeAsync();
 
     Console.WriteLine("\nClient pronto. Scrivi 'exit' per uscire.\n");
+
+
+    Console.WriteLine("invio primo prompt...");
+
+    var basicPrompt = "i dati che ti servono sono contenuti nelle viste 'IA_*'. " +
+                      "Le viste devono essere trattate come tabelle."
+                      + "I tool che ti vengono forniti possono essere utilizzati sia con viste che con tabelle";
+    
+    await orc.ProcessUserQueryAsync($"{basicPrompt} Quante tabelle/viste sei in grado di utilizzare?'");
+
+    Console.WriteLine("inizio conversazione");
 
     while (true)
     {

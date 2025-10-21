@@ -47,6 +47,14 @@ namespace McpOllamaClient
     public string? Text { get; set; }
   }
 
+  public class OllamaStreamResponseChunk
+  {
+    [JsonPropertyName("message")]
+    public OllamaMessage? Message { get; set; }
+
+    [JsonPropertyName("done")]
+    public bool Done { get; set; }
+  }
   public class OllamaMessage
   {
     [JsonPropertyName("role")]
@@ -79,7 +87,6 @@ namespace McpOllamaClient
     public string Content { get; set; } = "";
     public List<OllamaToolCall>? ToolCalls { get; set; }
   }
-
   public class OllamaApiResponse
   {
     [JsonPropertyName("message")]

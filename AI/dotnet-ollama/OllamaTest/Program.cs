@@ -12,7 +12,7 @@ class Program
     var request = new
     {
       model = "mistral",
-      prompt = "Scrivi un haiku sui cani"
+      prompt = "Scrivi un haiku denigratio"
     };
 
     //var json = JsonSerializer.Serialize(request);
