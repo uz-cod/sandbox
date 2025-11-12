@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36518.9 d17.14
+VisualStudioVersion = 17.14.36518.9
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpOllamaClient", "McpOllamaClient.csproj", "{7EF37EEA-6F33-6B2A-4301-831455F0B444}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpOllamaClient_SemanticKernel", "..\McpOllamaClient_SemanticKernel\McpOllamaClient_SemanticKernel.csproj", "{13ED2FAD-9603-41B1-96D0-76105ECE0F84}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{7EF37EEA-6F33-6B2A-4301-831455F0B444}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7EF37EEA-6F33-6B2A-4301-831455F0B444}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7EF37EEA-6F33-6B2A-4301-831455F0B444}.Release|Any CPU.Build.0 = Release|Any CPU
+		{13ED2FAD-9603-41B1-96D0-76105ECE0F84}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{13ED2FAD-9603-41B1-96D0-76105ECE0F84}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{13ED2FAD-9603-41B1-96D0-76105ECE0F84}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{13ED2FAD-9603-41B1-96D0-76105ECE0F84}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

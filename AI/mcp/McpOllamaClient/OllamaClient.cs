@@ -23,7 +23,7 @@ namespace McpOllamaClient
       };
     }
 
-    public async Task<OllamaResponse> ChatAsyncStream(
+    public async Task<OllamaResponse> ChatAsync(
     List<OllamaMessage> messages,
     List<McpTool> tools)
     {
@@ -32,7 +32,7 @@ namespace McpOllamaClient
         model = _model,
         messages = messages,
         tools = ConvertToOllamaTools(tools),
-        stream = true // Impostato a true per abilitare lo streaming
+        stream = true
       };
 
       var json = JsonSerializer.Serialize(request, new JsonSerializerOptions
@@ -42,36 +42,56 @@ namespace McpOllamaClient
 
       var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-      // Invia la richiesta e specifica di leggere solo gli header prima
       var httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
       {
         Content = content
       };
+
       var response = await _httpClient.SendAsync(httpRequestMessage, HttpCompletionOption.ResponseHeadersRead);
 
+      if (response.StatusCode != System.Net.HttpStatusCode.OK)
+      {
+        var resKO = await response.Content.ReadAsStringAsync();
+        Console.WriteLine(resKO);
+        return new OllamaResponse
+        {
+          Content = resKO
+        };
+      }
+
       response.EnsureSuccessStatusCode();
+      // --- Fine spinner connessione ---
 
       var fullContent = new StringBuilder();
       var toolCalls = new List<OllamaToolCall>();
 
-      // Leggi lo stream di dati
+      // Leggi lo stream
       using (var stream = await response.Content.ReadAsStreamAsync())
       using (var reader = new StreamReader(stream))
       {
-        while (!reader.EndOfStream)
+        string? line;
+
+        // Loop finché lo stream non è finito
+        while (true)
         {
-          var line = await reader.ReadLineAsync();
+          line = await reader.ReadLineAsync();
+
+          // Se la riga è null, lo stream è terminato
+          if (line == null)
+          {
+            break;
+          }
+
           if (string.IsNullOrWhiteSpace(line))
           {
             continue;
           }
 
-          // Deserializza ogni singolo "chunk" della risposta
+          // Deserializza e scrivi (SENZA spinner attivo)
           var chunk = JsonSerializer.Deserialize<OllamaStreamResponseChunk>(line);
 
           if (chunk?.Message?.Content != null)
           {
-            // Scrivi il pezzo di testo ricevuto direttamente in console
             Console.Write(chunk.Message.Content);
             fullContent.Append(chunk.Message.Content);
           }
@@ -83,8 +103,7 @@ namespace McpOllamaClient
         }
       }
 
-      // Aggiunge una nuova riga alla fine per pulizia della console
-      Console.WriteLine();
+      Console.WriteLine(); // Aggiunge una nuova riga alla fine
 
       return new OllamaResponse
       {
@@ -93,40 +112,6 @@ namespace McpOllamaClient
       };
     }
 
-    public async Task<OllamaResponse> ChatAsync(
-        List<OllamaMessage> messages,
-        List<McpTool> tools)
-    {
-      var request = new
-      {
-        model = _model,
-        messages = messages,
-        tools = ConvertToOllamaTools(tools),
-        stream = false
-      };
-
-      var json = JsonSerializer.Serialize(request, new JsonSerializerOptions
-      {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-      });
-
-      var content = new StringContent(json, Encoding.UTF8, "application/json");
-      var response = await _httpClient.PostAsync("/api/chat", content);
-
-      response.EnsureSuccessStatusCode();
-
-      var responseJson = await response.Content.ReadAsStringAsync();
-
-      Console.WriteLine(responseJson);
-
-      var ollamaResponse = JsonSerializer.Deserialize<OllamaApiResponse>(responseJson);
-
-      return new OllamaResponse
-      {
-        Content = ollamaResponse?.Message?.Content ?? "",
-        ToolCalls = ollamaResponse?.Message?.ToolCalls
-      };
-    }
 
     private List<object> ConvertToOllamaTools(List<McpTool> mcpTools)
     {

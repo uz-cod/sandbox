@@ -22,14 +22,23 @@ namespace McpOllamaClient
       _connectionString = connectionString;
     }
 
+    public bool IsProcessRunning(string exePath)
+    {
+      var processName = Path.GetFileNameWithoutExtension(exePath);
+      return Process.GetProcessesByName(processName).Any();
+    }
+
     public async Task ConnectAsync()
     {
+
+      Environment.SetEnvironmentVariable("CONNECTION_STRING", _connectionString);
+
       _process = new Process
       {
         StartInfo = new ProcessStartInfo
         {
           FileName = _serverPath,
-          Arguments = $"--connection-string \"{_connectionString}\"",
+          //   Arguments = $"--connection-string \"{_connectionString}\"",
           UseShellExecute = false,
           RedirectStandardInput = true,
           RedirectStandardOutput = true,
@@ -38,7 +47,11 @@ namespace McpOllamaClient
         }
       };
 
-      _process.Start();
+     // if (!IsProcessRunning(Path.GetFileNameWithoutExtension(_serverPath)))
+      {
+        _process.Start();
+      }
+
       _stdin = _process.StandardInput;
       _stdout = _process.StandardOutput;
 
@@ -82,6 +95,7 @@ namespace McpOllamaClient
         method = method,
         @params = paramsObj
       };
+
 
       var json = JsonSerializer.Serialize(request);
       await _stdin!.WriteLineAsync(json);
