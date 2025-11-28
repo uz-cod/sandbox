@@ -4,27 +4,35 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using System.Text;
+using System.Threading;
+
+
+var model = "qwen3:8b";
+//var model = "llama3.2";
+var ollamaUri = new Uri("http://localhost:11434/v1");
 
 // Configure Semantic Kernel
 var builder = Kernel.CreateBuilder();
 builder.Services.AddOpenAIChatCompletion(
-    //modelId: "llama3.2",
-    modelId: "qwen3:8b",
-    apiKey: null, // No API key needed for Ollama
-    endpoint: new Uri("http://localhost:11434/v1") // Ollama server endpoint
+    modelId: model,
+    apiKey: null,
+    endpoint: ollamaUri
 );
-var kernel = builder.Build();
 
+var kernel = builder.Build();
 var cfgBuilder = new ConfigurationBuilder()
     .SetBasePath(AppDomain.CurrentDomain.BaseDirectory) // Imposta la directory di base
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true) // Carica appsettings.json
     .AddUserSecrets<Program>(); // Carica i segreti utente (specifica una classe nel tuo progetto)
 
 IConfigurationRoot configuration = cfgBuilder.Build();
-string connectionString = configuration.GetConnectionString("DefaultConnection");
 
-// Set up MCP Client
-await using IMcpClient mcpClient = await McpClientFactory.CreateAsync(
+string connectionString = configuration.GetConnectionString("DefaultConnection");
+Environment.SetEnvironmentVariable("CONNECTION_STRING", connectionString);
+
+// Set up MCP Clent
+await using McpClient mcpClient = await McpClient.CreateAsync(
     new StdioClientTransport(new()
     {
       Command = "dotnet run",
@@ -43,37 +51,127 @@ foreach (var tool in tools)
 }
 
 // Register MCP tools with Semantic Kernel
-#pragma warning disable SKEXP0001 // Suppress diagnostics for experimental features
 kernel.Plugins.AddFromFunctions("McpTools", tools.Select(t => t.AsKernelFunction()));
-#pragma warning restore SKEXP0001
+
+//debug/test
+var mcpPlugin = kernel.Plugins["McpTools"];
+foreach (var func in mcpPlugin)
+{
+  Console.WriteLine($"\nFunction: {func.Name}");
+  // Verifica che Qwen vedrà i parametri
+  foreach (var param in func.Metadata.Parameters)
+  {
+    Console.WriteLine($"  - Param: {param.Name} ({param.ParameterType?.Name})");
+    Console.WriteLine($"    Desc: {param.Description}");
+  }
+}
 
 // Chat loop
 Console.WriteLine("Chat with the AI. Type 'exit' to stop.");
-var history = new ChatHistory();
-history.AddSystemMessage("You are an assistant that can call MCP tools to process user queries.");
+
 
 // Get chat completion service
 var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
 
-var basicPrompt = "i dati che ti servono sono prevalentemente nelle viste IA_* (esempio: IA_Attivita, IA_Ticket, ecc)" +
-                  "Le viste devono essere trattate come tabelle." +
-                  "I tool che ti vengono forniti possono essere utilizzati sia con viste che con tabelle";
-
-var firstMessage = $"{basicPrompt}. Quante tabelle/viste con prefisso IA vedi?";
-history.AddUserMessage(firstMessage);
-
 OpenAIPromptExecutionSettings openAIPromptExecutionSettings = new()
 {
   ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
+
+  // Evita loop infiniti se Qwen si incastra
+  MaxTokens = 4000, // Qwen 2.5 gestisce bene contesti lunghi
+  Temperature = 0.1 // Bassa per precisione tecnica
 };
 
-// Get the response from the AI
-var initRes = await chatCompletionService.GetChatMessageContentAsync(
-    history,
-    executionSettings: openAIPromptExecutionSettings,
-    kernel: kernel);
+//setup chat
+var history = new ChatHistory();
+string systemPrompt = @"
+Sei un assistente database intelligente connesso a un server MCP (in grado di interagire con un DB SQL Server).
+NON conosci a priori la struttura del database.
 
-Console.WriteLine($"Assistant > {initRes.Content}");
+I dati che ti servono sono prevalentemente nelle viste IA_* (esempio: IA_Attivita,IA_Ticket, ecc)
+
+I tool sono in grado di trattare nello stesso modo viste e tabelle indistintamente.
+
+Il tuo obiettivo è rispondere alla domanda dell'utente usando i tool a disposizione.
+Strategia obbligatoria:
+
+1. ESPLORA: Usa i tool di listing (es. list_tables) per capire cosa c'è nel DB.
+2. ISPEZIONA: Usa i tool di schema (es. describe_table) per capire le colonne delle tabelle rilevanti.
+3. INTERROGA: Usa i tool di lettura (es. query/select) per ottenere i dati.
+4. RISPONDI: Formula la risposta finale solo dopo aver letto i dati reali.
+
+Non tirare a indovinare nomi di tabelle o colonne.";
+
+history.AddSystemMessage(systemPrompt);
+
+history.AddUserMessage($"Quanto clienti attivi ci sono?");
+//history.AddUserMessage($"Trovami l'offerta con valore più alto del 2025");
+
+
+using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+
+bool streaming = true;
+
+if (!streaming)
+{
+  var initRes = await chatCompletionService.GetChatMessageContentAsync(
+      history,
+      executionSettings: openAIPromptExecutionSettings,
+      kernel: kernel,
+      cancellationToken: cts.Token
+   );
+
+  Console.WriteLine($"Assistant > {initRes.Content}");
+}
+else
+{
+  try
+  {
+
+    var responseBuilder = new StringBuilder();
+
+    // STREAMING: GetStreamingChatMessageContentsAsync invece di GetChatMessageContentAsync
+    await foreach (var chunk in chatCompletionService.GetStreamingChatMessageContentsAsync(
+        history,
+        executionSettings: openAIPromptExecutionSettings,
+        kernel: kernel,
+        cancellationToken: cts.Token))
+    {
+      // Stampa ogni chunk man mano che arriva
+      if (!string.IsNullOrEmpty(chunk.Content))
+      {
+        Console.Write(chunk.Content);
+        responseBuilder.Append(chunk.Content);
+      }
+    }
+
+    Console.WriteLine(); // Newline dopo la risposta completa
+
+    // Aggiungi la risposta completa alla history
+    var fullResponse = responseBuilder.ToString();
+    history.AddAssistantMessage(fullResponse);
+
+    Console.WriteLine($"Assistant > {fullResponse}");
+
+  }
+  catch (OperationCanceledException)
+  {
+    Console.WriteLine("\n⏱️ Timeout: Request exceeded 5 minutes.");
+    history.RemoveAt(history.Count - 1);
+  }
+  catch (HttpRequestException ex)
+  {
+    Console.WriteLine($"\n❌ Connection error: {ex.Message}");
+    history.RemoveAt(history.Count - 1);
+  }
+  catch (Exception ex)
+  {
+    Console.WriteLine($"\n❌ Error: {ex.Message}");
+    history.RemoveAt(history.Count - 1);
+  }
+
+  // Get the response from the AI
+}
 
 
 while (true)
