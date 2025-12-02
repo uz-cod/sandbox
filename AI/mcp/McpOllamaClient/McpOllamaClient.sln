@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpOllamaClient", "McpOllam
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpOllamaClient_SemanticKernel", "..\McpOllamaClient_SemanticKernel\McpOllamaClient_SemanticKernel.csproj", "{13ED2FAD-9603-41B1-96D0-76105ECE0F84}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MssqlMcp", "..\MssqlMcp\dotnet\MssqlMcp\MssqlMcp.csproj", "{207271FA-22FD-14A3-D095-43195034DBE6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{13ED2FAD-9603-41B1-96D0-76105ECE0F84}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{13ED2FAD-9603-41B1-96D0-76105ECE0F84}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{13ED2FAD-9603-41B1-96D0-76105ECE0F84}.Release|Any CPU.Build.0 = Release|Any CPU
+		{207271FA-22FD-14A3-D095-43195034DBE6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{207271FA-22FD-14A3-D095-43195034DBE6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{207271FA-22FD-14A3-D095-43195034DBE6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{207271FA-22FD-14A3-D095-43195034DBE6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

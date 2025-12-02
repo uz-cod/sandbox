@@ -1,16 +1,21 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using McpOllamaClient_SemanticKernel;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using System;
 using System.Text;
 using System.Threading;
 
 
-var model = "qwen3:8b";
+var model = "qwen2.5:14b";
 //var model = "llama3.2";
-var ollamaUri = new Uri("http://localhost:11434/v1");
+//var ollamaUri = new Uri("http://localhost:11434/v1");
+
+var ollamaUri = new Uri("http://wksnvidia1:11435/v1");
 
 // Configure Semantic Kernel
 var builder = Kernel.CreateBuilder();
@@ -20,7 +25,11 @@ builder.Services.AddOpenAIChatCompletion(
     endpoint: ollamaUri
 );
 
+//debug tooling
+builder.Services.AddSingleton<IFunctionInvocationFilter, ToolLoggingFilter>();
+
 var kernel = builder.Build();
+
 var cfgBuilder = new ConfigurationBuilder()
     .SetBasePath(AppDomain.CurrentDomain.BaseDirectory) // Imposta la directory di base
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true) // Carica appsettings.json
@@ -31,20 +40,33 @@ IConfigurationRoot configuration = cfgBuilder.Build();
 string connectionString = configuration.GetConnectionString("DefaultConnection");
 Environment.SetEnvironmentVariable("CONNECTION_STRING", connectionString);
 
+Console.WriteLine($"start SQLServer MCP Server...");
 // Set up MCP Clent
+//await using McpClient mcpClient = await McpClient.CreateAsync(
+//    new StdioClientTransport(new()
+//    {
+//      Command = "dotnet run",
+//      Arguments = ["--project", "C:\\dev\\pers\\sandbox\\AI\\mcp\\MssqlMcp\\MssqlMcp.csproj"],
+//      Name = "MsSqlMcpServer",
+//    }));
+
+string binPath = @"C:\dev\pers\sandbox\AI\mcp\MssqlMcp\dotnet\MssqlMcp\bin\Debug\net8.0";
+string exeName = "MssqlMcp.exe";
 await using McpClient mcpClient = await McpClient.CreateAsync(
     new StdioClientTransport(new()
     {
-      Command = "dotnet run",
-      Arguments = ["--project", "C:\\dev\\pers\\sandbox\\AI\\mcp\\MssqlMcp\\MssqlMcp.csproj"],
-      Name = "McpServer",
+      Command = Path.Combine(binPath, exeName),
+      Arguments = [],
+      Name = "MsSqlMcpServer",
     }));
 
+
+Console.WriteLine($"discovering tools...");
 // Retrieve and load tools from the server
 IList<McpClientTool> tools = await mcpClient.ListToolsAsync().ConfigureAwait(false);
 
 // List all available tools from the MCP server
-Console.WriteLine("\n\nAvailable MCP Tools:");
+Console.WriteLine("Available MCP Tools:");
 foreach (var tool in tools)
 {
   Console.WriteLine($"{tool.Name}: {tool.Description}");
@@ -55,20 +77,20 @@ kernel.Plugins.AddFromFunctions("McpTools", tools.Select(t => t.AsKernelFunction
 
 //debug/test
 var mcpPlugin = kernel.Plugins["McpTools"];
-foreach (var func in mcpPlugin)
-{
-  Console.WriteLine($"\nFunction: {func.Name}");
-  // Verifica che Qwen vedrà i parametri
-  foreach (var param in func.Metadata.Parameters)
-  {
-    Console.WriteLine($"  - Param: {param.Name} ({param.ParameterType?.Name})");
-    Console.WriteLine($"    Desc: {param.Description}");
-  }
-}
+//foreach (var func in mcpPlugin)
+//{
+//  Console.WriteLine($"\nFunction: {func.Name}");
+//  Console.WriteLine($"\nDesc:     {func.Description}");
+//  foreach (var param in func.Metadata.Parameters)
+//  {
+//    Console.WriteLine($"    Param: {param.Name}");
+//    Console.WriteLine($"    Schema: {param.Schema}");
+//    Console.WriteLine($"    Desc: {param.Description}");
+//  }
+//}
 
 // Chat loop
 Console.WriteLine("Chat with the AI. Type 'exit' to stop.");
-
 
 // Get chat completion service
 var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
@@ -76,61 +98,83 @@ var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
 OpenAIPromptExecutionSettings openAIPromptExecutionSettings = new()
 {
   ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
-
-  // Evita loop infiniti se Qwen si incastra
   MaxTokens = 4000, // Qwen 2.5 gestisce bene contesti lunghi
   Temperature = 0.1 // Bassa per precisione tecnica
 };
 
 //setup chat
 var history = new ChatHistory();
+//string systemPrompt = @"
+//You are an expert Data Analyst and SQL Assistant connected to a SQL Server database via specific tools.
+//Your goal is to answer user questions by retrieving data accurately.
+
+//### 1. THE GOLDEN RULE: ""IA_"" VIEWS ONLY
+//The database contains many technical tables/views, but you must focus ONLY on the views created for you.
+//- **Naming Convention**: All relevant data is stored in views starting with the prefix **'IA_'** (e.g., `IA_Clienti`, `IA_Attivita`, etc).
+//- **Ignore**: Completely ignore any table/view that does not start with 'IA_'.
+
+//### 2. STANDARD OPERATING PROCEDURE (Execution Loop)
+//You must strictly follow these steps for every user request involving data:
+
+//**STEP 1: DISCOVERY (List)**
+//- Call the `ListViews` tool immediately.
+//- Look specifically for views starting with `IA_` that seem relevant to the user's question. 
+
+//**STEP 2: INSPECTION (Describe)**
+//- Once you identify a potential `IA_` candidate, call `DescribeTable` (or `DescribeView`) on it.
+//- **CRITICAL**: Do not guess column names. You MUST see the schema output before writing a query.
+
+//**STEP 3: EXECUTION (Query)**
+//- Use the `ReadData` (or SQL query) tool to fetch the data.
+//- Since data is denormalized, prefer simple `SELECT` statements with `WHERE` filters over complex logic.
+
+//### 3. BEHAVIORAL GUIDELINES
+//- **Read-Only**: You can only read data. Never attempt to write, update, or drop.
+//- **Honesty**: If you cannot find an `IA_` view relevant to the request, state that information is missing instead of hallucinating.
+//- **Formatting**: Present the final answer clearly to the user.
+
+//### 4. OUTPUT LANGUAGE
+//- Even though these instructions are in English, **you must converse with the user in Italian**.
+//";
+
 string systemPrompt = @"
-Sei un assistente database intelligente connesso a un server MCP (in grado di interagire con un DB SQL Server).
-NON conosci a priori la struttura del database.
+You are an expert Data Analyst and SQL Assistant connected to a SQL Server database via specific tools.
+Your goal is to answer user questions by retrieving data accurately.
 
-I dati che ti servono sono prevalentemente nelle viste IA_* (esempio: IA_Attivita,IA_Ticket, ecc)
+- All relevant data is stored in views starting with the prefix **'IA_'** (e.g., `IA_Clienti`, `IA_Attivita`, etc).
 
-I tool sono in grado di trattare nello stesso modo viste e tabelle indistintamente.
-
-Il tuo obiettivo è rispondere alla domanda dell'utente usando i tool a disposizione.
-Strategia obbligatoria:
-
-1. ESPLORA: Usa i tool di listing (es. list_tables) per capire cosa c'è nel DB.
-2. ISPEZIONA: Usa i tool di schema (es. describe_table) per capire le colonne delle tabelle rilevanti.
-3. INTERROGA: Usa i tool di lettura (es. query/select) per ottenere i dati.
-4. RISPONDI: Formula la risposta finale solo dopo aver letto i dati reali.
-
-Non tirare a indovinare nomi di tabelle o colonne.";
+- Even though these instructions are in English, **you must converse with the user in Italian**.
+";
 
 history.AddSystemMessage(systemPrompt);
 
-history.AddUserMessage($"Quanto clienti attivi ci sono?");
-//history.AddUserMessage($"Trovami l'offerta con valore più alto del 2025");
+string userRequest = "quanti clienti attivi ci sono?";
+history.AddUserMessage(userRequest);
 
+Console.ForegroundColor = ConsoleColor.Green;
+Console.WriteLine($"User > {userRequest}");
+Console.ResetColor();
 
-using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 
 bool streaming = true;
-
 if (!streaming)
 {
-  var initRes = await chatCompletionService.GetChatMessageContentAsync(
+  var result = await chatCompletionService.GetChatMessageContentAsync(
       history,
       executionSettings: openAIPromptExecutionSettings,
       kernel: kernel,
       cancellationToken: cts.Token
    );
 
-  Console.WriteLine($"Assistant > {initRes.Content}");
+  Console.WriteLine($"Assistant > {result.Content}");
 }
 else
 {
   try
   {
-
     var responseBuilder = new StringBuilder();
 
-    // STREAMING: GetStreamingChatMessageContentsAsync invece di GetChatMessageContentAsync
     await foreach (var chunk in chatCompletionService.GetStreamingChatMessageContentsAsync(
         history,
         executionSettings: openAIPromptExecutionSettings,
@@ -154,25 +198,17 @@ else
     Console.WriteLine($"Assistant > {fullResponse}");
 
   }
-  catch (OperationCanceledException)
-  {
-    Console.WriteLine("\n⏱️ Timeout: Request exceeded 5 minutes.");
-    history.RemoveAt(history.Count - 1);
-  }
-  catch (HttpRequestException ex)
-  {
-    Console.WriteLine($"\n❌ Connection error: {ex.Message}");
-    history.RemoveAt(history.Count - 1);
-  }
   catch (Exception ex)
   {
-    Console.WriteLine($"\n❌ Error: {ex.Message}");
+    Console.WriteLine($"Error: {ex.Message}");
     history.RemoveAt(history.Count - 1);
   }
 
   // Get the response from the AI
 }
 
+//Console.WriteLine($"FINE STEP 1");
+//Console.ReadKey();
 
 while (true)
 {
@@ -181,12 +217,6 @@ while (true)
   if (input?.Trim().ToLower() == "exit") break;
 
   history.AddUserMessage(input);
-
-  // Enable auto function calling
-  openAIPromptExecutionSettings = new()
-  {
-    ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions
-  };
 
   // Get the response from the AI
   var result = await chatCompletionService.GetChatMessageContentAsync(
