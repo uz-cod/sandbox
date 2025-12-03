@@ -98,8 +98,8 @@ var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
 OpenAIPromptExecutionSettings openAIPromptExecutionSettings = new()
 {
   ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
-  MaxTokens = 4000, // Qwen 2.5 gestisce bene contesti lunghi
-  Temperature = 0.1 // Bassa per precisione tecnica
+  MaxTokens = 8000, // Qwen 2.5 gestisce bene contesti lunghi
+  Temperature = 0.1 // Bassa per avere precisione tecnica
 };
 
 //setup chat
@@ -138,17 +138,60 @@ var history = new ChatHistory();
 //";
 
 string systemPrompt = @"
-You are an expert Data Analyst and SQL Assistant connected to a SQL Server database via specific tools.
+You are an expert Data Analyst and SQL Assistant connected to a MCP SQL Server database via specific tools.
 Your goal is to answer user questions by retrieving data accurately.
 
 - All relevant data is stored in views starting with the prefix **'IA_'** (e.g., `IA_Clienti`, `IA_Attivita`, etc).
-
 - Even though these instructions are in English, **you must converse with the user in Italian**.
 ";
+
+//string systemPrompt = @"
+//** SYSTEM INSTRUCTION FOR SQL AGENT **
+
+// You are an expert SQL Query Generator tasked with interacting with a Microsoft SQL Server database 
+// via the Model Context Protocol (MCP) server tools. 
+// Your primary goal is to generate single, efficient SQL SELECT queries based on user requests.
+
+// ** DATABASE CONSTRAINTS & CONTEXT **
+
+// 1.  **Data Source:** ALL required data is contained exclusively within views named `IA_*`.
+// 2.  **Naming Convention:** All views relevant to the user start with the prefix `IA_`.
+// 3.  **READ-ONLY:** You must only perform read-only operations (SELECT).
+// 4.  **CRITICAL JOIN RESTRICTION (OVERRIDE):** You MUST NOT use or reference any tables or views 
+//     whose names DO NOT start with the `IA_` prefix. This rule applies even if they appear 
+//     in the `definition` field of the `DescribeView` tool output.
+// 5.  **JOIN Strategy:** If a query requires joining multiple data sources, the join MUST only be 
+//     between two or more `IA_*` views.
+// 6.  **Data Retrieval Strategy:** Always prioritize selecting the necessary `IA_*` views and their columns.
+
+// ** TOOL USE GUIDELINES **
+
+// To identify the correct views and columns, you MUST rely on the following tools:
+
+// * **ListViews():** Use this first to get the list of available `IA_*` views.
+// * **DescribeView(name):** Use this to retrieve the schema, columns, data types, and the underlying SQL 
+//     definition for a specific `IA_*` view.
+
+// ** METHODOLOGY **
+
+// 1.  **View Identification:** Use `ListViews` to find the potentially relevant view(s).
+// 2.  **Schema Exploration:** Use `DescribeView` on the chosen view(s) to verify column names and structure.
+// 3.  **DEFINITION FIELD RULE:** When using the output of `DescribeView`, you MUST only read the 
+//     `columns` list. You MUST ignore all table/view names found within the `definition` field, 
+//     unless they start with the `IA_` prefix. The content of the `definition` field is for context only 
+//     and is NOT a source for new tables/views to use in your SELECT query.
+// 4.  **Query Generation:** Generate the final SQL `SELECT` statement, ensuring all column and view names 
+//     are exact matches to the schema provided by the tools. DO NOT invent names.
+
+//  ** START **
+
+//  Acknowledge these instructions and wait for the user query.
+//";
 
 history.AddSystemMessage(systemPrompt);
 
 string userRequest = "quanti clienti attivi ci sono?";
+//string userRequest = "qual è l'offerta con valore più alto in termini di licenze del 2025";
 history.AddUserMessage(userRequest);
 
 Console.ForegroundColor = ConsoleColor.Green;
