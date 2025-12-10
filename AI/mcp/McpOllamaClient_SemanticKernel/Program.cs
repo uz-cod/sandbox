@@ -11,8 +11,9 @@ using System.Text;
 using System.Threading;
 
 
-var model = "qwen2.5:14b";
-//var model = "llama3.2";
+//var model = "qwen2.5:14b";
+var model = "qwen2.5-coder:latest";
+
 //var ollamaUri = new Uri("http://localhost:11434/v1");
 
 var ollamaUri = new Uri("http://wksnvidia1:11435/v1");
@@ -98,8 +99,8 @@ var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
 OpenAIPromptExecutionSettings openAIPromptExecutionSettings = new()
 {
   ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
-  MaxTokens = 8000, // Qwen 2.5 gestisce bene contesti lunghi
-  Temperature = 0.1 // Bassa per avere precisione tecnica
+  MaxTokens = 16384,
+  Temperature = 0 
 };
 
 //setup chat
@@ -148,9 +149,9 @@ Your goal is to answer user questions by retrieving data accurately.
 //string systemPrompt = @"
 //** SYSTEM INSTRUCTION FOR SQL AGENT **
 
-// You are an expert SQL Query Generator tasked with interacting with a Microsoft SQL Server database 
+// You are an expert Data Analyst and SQL Assistant tasked with interacting with a Microsoft SQL Server database 
 // via the Model Context Protocol (MCP) server tools. 
-// Your primary goal is to generate single, efficient SQL SELECT queries based on user requests.
+//Your goal is to answer user questions by retrieving data accurately.
 
 // ** DATABASE CONSTRAINTS & CONTEXT **
 
@@ -182,10 +183,8 @@ Your goal is to answer user questions by retrieving data accurately.
 //     and is NOT a source for new tables/views to use in your SELECT query.
 // 4.  **Query Generation:** Generate the final SQL `SELECT` statement, ensuring all column and view names 
 //     are exact matches to the schema provided by the tools. DO NOT invent names.
-
-//  ** START **
-
-//  Acknowledge these instructions and wait for the user query.
+//     Once identified the correct query (please double-check columns names), exec it with 'ReadData' MCP tool.
+//     Always output query before executing it.
 //";
 
 history.AddSystemMessage(systemPrompt);
