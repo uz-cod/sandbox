@@ -95,9 +95,7 @@ namespace MesMartenDemoV8Fixed
         var viewFinale = await query.LoadAsync<AvanzamentoOrdine>(ordineId);
 
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"\n[DASHBOARD REAL-TIME]");
-        Console.WriteLine($"Stato: {viewFinale.Stato}");
-        Console.WriteLine($"Pezzi: {viewFinale.PezziBuoni} OK | {viewFinale.PezziScarti} KO");
+        Console.WriteLine($" $"Pezzi: {viewFinale.PezziBuoni} OK | {viewFinale.PezziScarti} KO");
         Console.WriteLine($"Ultimo Update: {viewFinale.UltimoAggiornamento:HH:mm:ss.fff}");
         Console.ResetColor();
       }
