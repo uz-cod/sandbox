@@ -1,0 +1,33 @@
+﻿{
+  "Routes": [
+    //Catalog API
+    {
+      "DownstreamPathTemplate": "/ing-catalog/v1/{everything}",
+      "DownstreamScheme": "https",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 7443
+        }
+      ],
+      "UpstreamPathTemplate": "/api/catalog/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ]      
+    },
+    //Cart API
+    {
+      "DownstreamPathTemplate": "/ing-cart/v1/cart/{everything}",
+      "DownstreamScheme": "https",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 6443
+        }
+      ],
+      "UpstreamPathTemplate": "/api/cart/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "DELETE" ]      
+    }    
+  ],
+  "GlobalConfiguration": {
+    "BaseUrl": "https://localhost:4443"
+  }
+}

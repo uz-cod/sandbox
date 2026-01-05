@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ACME.CartCustom.Domain\ACME.CartCustom.Domain.csproj" />
+    <ProjectReference Include="..\ACME.CartCustom.Infrastructure\ACME.CartCustom.Infrastructure.csproj" />
+    <ProjectReference Include="..\Ingenium.Framework.Cart.Domain\Ingenium.Framework.Cart.Domain.csproj" />
+    <ProjectReference Include="..\Ingenium.Framework.Common\Ingenium.Framework.Common.csproj" />
+  </ItemGroup>
+  
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Condition="'$(Configuration)' == 'Debug'" Command="echo F|xcopy &quot;$(ProjectDir)bin\$(Configuration)\net9.0\*.dll&quot; &quot;$(SolutionDir)Ingenium.Framework.Host\bin\$(Configuration)\net9.0\&quot; /Y" />
+    <Exec Condition="'$(Configuration)' == 'Debug'" Command="echo F|xcopy &quot;$(ProjectDir)bin\$(Configuration)\net9.0\*.pdb&quot; &quot;$(SolutionDir)Ingenium.Framework.Host\bin\$(Configuration)\net9.0\&quot; /Y" />
+  </Target>
+
+</Project>

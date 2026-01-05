@@ -1,0 +1,19 @@
+meta {
+  name: 04-Add-Product
+  type: http
+  seq: 4
+}
+
+post {
+  url: https://localhost:4443/api/cart/add
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "productId": 1,
+    "customerId": 1,
+    "quantity": 1
+  }
+}

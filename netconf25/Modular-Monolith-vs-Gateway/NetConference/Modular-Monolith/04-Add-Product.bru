@@ -1,0 +1,19 @@
+meta {
+  name: 04-Add-Product
+  type: http
+  seq: 4
+}
+
+post {
+  url: https://localhost:5443/ing-cart/v1/cart/add
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "productId": 1,
+    "customerId": 1,
+    "quantity": 1
+  }
+}
