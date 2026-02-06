@@ -34,6 +34,9 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ingenium.Framework.Cart.Infrastructure", "Ingenium.Framework.Cart.Infrastructure\Ingenium.Framework.Cart.Infrastructure.csproj", "{B640C313-3328-4F59-AE07-D7FDD329D8B8}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CartCustom", "CartCustom", "{5E12BE1D-1C9E-4455-A4B5-183998BBA074}"
+	ProjectSection(SolutionItems) = preProject
+		Ingenium.Framework.Cart.Infrastructure\Cart\CartService.cs = Ingenium.Framework.Cart.Infrastructure\Cart\CartService.cs
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ACME.CartCustom.Api", "ACME.CartCustom.Api\ACME.CartCustom.Api.csproj", "{74286D77-1BA9-489E-B5D8-0DABEA159B9E}"
 EndProject
