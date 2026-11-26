@@ -191,6 +191,20 @@ export function bakeOsm({ quiet = false } = {}) {
     });
   }
 
+  // --- huts along each route (within 40 m of the polyline): shown as stops in the trail list
+  for (const r of routes) {
+    r.stops = [];
+    for (const h of huts) {
+      let best = 1e9, bi = 0;
+      for (let i = 0; i < r.count; i++) {
+        const k = 2 * (r.offset + i);
+        const d = Math.hypot(routePts[k] - h.x, routePts[k + 1] - h.z) - Math.max(h.hu, h.hv);
+        if (d < best) { best = d; bi = i; }
+      }
+      if (best < 40) r.stops.push({ name: h.name || (h.type === 'bivouac' ? 'Bivacco' : 'Rifugio'), index: bi });
+    }
+  }
+
   // --- crosses >= 600 m
   const crosses = [];
   for (const c of ex.crosses) {

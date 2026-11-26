@@ -42,7 +42,9 @@ function showTrails(i) {
     const label = o.ref ? o.ref : (o.name || 'sentiero');
     const title = o.name && o.ref ? o.name : '';
     b.title = title;
-    b.innerHTML = `<span class="r">${label}</span><span class="n">verso ${o.toward} · ${fmtKm(o.length)}</span><span class="e">−${Math.round(o.h0 - o.h1)} m</span>`;
+    const via = o.stops.length ? ` · ${o.stops.map((s) => s.name).join(', ')}` : ` · verso ${o.toward}`;
+    b.title = [title, ...o.stops.map((s) => `${s.name} a ${fmtKm(s.along)}`)].filter(Boolean).join('\n');
+    b.innerHTML = `<span class="r">${label}</span><span class="n">${fmtKm(o.length)}${via}</span><span class="e">−${Math.round(o.h0 - o.h1)} m</span>`;
     b.addEventListener('click', (e) => { e.stopPropagation(); beginFollow(o); b.blur(); });
     box.appendChild(b);
   });
@@ -142,7 +144,10 @@ async function main() {
       if (!follow.active) return;
       const o = follow.opt;
       fProg.textContent = `${fmtKm(follow.s)} / ${fmtKm(follow.total)} · quota ${Math.round(camera.y - follow.eye)} m · arrivo ${Math.round(o.h1)} m`;
-      fState.textContent = follow.s >= follow.total ? 'arrivato' : follow.auto ? 'in cammino' : 'in pausa';
+      const next = o.stops.find((s) => s.along > follow.s + 5);
+      const here = o.stops.find((s) => Math.abs(s.along - follow.s) <= 25);
+      fState.textContent = here ? `al ${here.name}` : follow.s >= follow.total ? 'arrivato'
+        : `${follow.auto ? 'in cammino' : 'in pausa'}${next ? ` · ${next.name} tra ${fmtKm(next.along - follow.s)}` : ''}`;
     };
     const ll = new Float64Array(2);
     let frames = 0, hudT = 0, last = performance.now();

@@ -147,9 +147,19 @@ function buildRouteOptions(routePts) {
         const sx = routePts[2 * startI], sz = routePts[2 * startI + 1], ex = routePts[2 * endI], ez = routePts[2 * endI + 1];
         const h0 = groundHeightCubic(sx, sz), h1 = groundHeightCubic(ex, ez);
         if (h0 - h1 < 80) continue;               // "from the summit down"
+        // huts passed on the way down, with distance from the start
+        const stops = [];
+        for (const st of r.stops || []) {
+          const si = r.offset + st.index;
+          if ((si - startI) * dir <= 0) continue;
+          let along = 0;
+          for (let i = startI; i !== si; i += dir) along += Math.hypot(routePts[2 * (i + dir)] - routePts[2 * i], routePts[2 * (i + dir) + 1] - routePts[2 * i + 1]);
+          stops.push({ name: st.name, along });
+        }
+        stops.sort((a, b) => a.along - b.along);
         const opt = {
           key: `${r.id}:${t.index}:${dir}`, ref: r.ref, name: r.name, osmc: r.osmc,
-          start: startI, end: endI, dir, length: len, h0, h1, toward: bearingName(ex - sx, ez - sz),
+          start: startI, end: endI, dir, length: len, h0, h1, toward: bearingName(ex - sx, ez - sz), stops,
         };
         if (!byPeak.has(t.peak)) byPeak.set(t.peak, []);
         byPeak.get(t.peak).push(opt);

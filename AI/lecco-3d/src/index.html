@@ -11,7 +11,7 @@
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
   .panel { position: fixed; background: var(--bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 10px 12px; }
-  #ui { top: 16px; left: 16px; width: 240px; }
+  #ui { top: 16px; left: 16px; width: 270px; }
   #ui h1 { font-size: 14px; margin: 0 0 8px; font-weight: 600; letter-spacing: .02em; }
   #peaks { display: flex; flex-direction: column; gap: 2px; }
   #peaks button { all: unset; cursor: pointer; display: grid; grid-template-columns: 20px 1fr auto; gap: 8px;
@@ -28,7 +28,7 @@
   #trails button:hover { background: rgba(255,255,255,.08); }
   #trails .r { font: 600 11px ui-monospace, monospace; color: #1b1b1b; background: #f2f2f2; border-radius: 3px; padding: 0 4px;
     box-shadow: inset 0 3px 0 #d9342b, inset 0 -3px 0 #d9342b; line-height: 17px; min-width: 22px; text-align: center; }
-  #trails .n { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #trails .n { color: var(--fg); line-height: 1.25; }
   #follow { display: none; bottom: 16px; left: 50%; transform: translateX(-50%); text-align: center; min-width: 320px; }
   #follow b { display: block; font-size: 13px; margin-bottom: 2px; }
   #follow .p { font: 12px ui-monospace, monospace; color: var(--dim); }

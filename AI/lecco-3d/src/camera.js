@@ -109,7 +109,13 @@ function updateFollow(dt) {
   const manual = input.f - input.b;
   const dir = manual !== 0 ? manual : follow.auto ? 1 : 0;
   let v = follow.speed * camera.speedMul * (input.fast ? 4 : 1) * (input.slow ? 0.3 : 1);
+  const prevS = follow.s;
   follow.s = Math.max(0, Math.min(follow.total, follow.s + dir * v * dt));
+  // auto-walk pauses on arrival at a hut along the route (Space to continue)
+  if (follow.auto && manual === 0) {
+    const st = follow.opt.stops;
+    for (let i = 0; i < st.length; i++) if (prevS < st[i].along && follow.s >= st[i].along) { follow.s = st[i].along; follow.auto = false; }
+  }
   samplePath(follow.s, tmp);
   const x = tmp[0], z = tmp[1];
   // heading from a look-ahead point, smoothed

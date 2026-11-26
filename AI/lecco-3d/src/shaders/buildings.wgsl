@@ -118,8 +118,11 @@ fn fsBuild(i: BOut) -> @location(0) vec4f {
   // contact darkening near the ground
   let grounded = mix(0.55, 1.0, smoothstep(-0.2, 1.2, i.uv.y));
   let ndl = max(dot(n, Ls), 0.0);
-  let sky = skyRadiance(normalize(vec3f(n.x * 0.5, 1.0, n.z * 0.5))) * 0.55;
-  var col = s.albedo * (F.sunColor.rgb * ndl * sunVis + sky * (0.6 + 0.4 * n.y) * ao * grounded);
+  // ambient: sky from above, warm-green bounce from the sunlit slopes for walls / shaded faces
+  let sky = skyRadiance(normalize(vec3f(n.x * 0.5, 1.0, n.z * 0.5))) * 0.45;
+  let bounce = vec3f(0.13, 0.13, 0.085) * F.sunColor.rgb * (0.35 + 0.65 * sunVis);
+  let amb = sky * (0.45 + 0.55 * max(n.y, 0.0)) + bounce * (1.0 - 0.6 * max(n.y, 0.0));
+  var col = s.albedo * (F.sunColor.rgb * ndl * sunVis + amb * ao * grounded);
   let Hh = normalize(Ls + V);
   col += F.sunColor.rgb * s.spec * 0.25 * pow(max(dot(n, Hh), 0.0), 40.0) * sunVis;
   if (s.glass > 0.0) {

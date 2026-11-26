@@ -273,7 +273,7 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4f {
       var pc = mix(vec3f(0.14, 0.115, 0.085), vec3f(0.25, 0.23, 0.20), clamp(grain * 0.6 + rock * 0.5, 0.0, 1.0));
       let near = 1.0 - smoothstep(8.0, 50.0, dist);
       pc *= 0.8 + 0.35 * noise(p.xz / 0.22) * near;
-      pc = mix(pc, vec3f(0.36, 0.35, 0.32), smoothstep(0.55, 0.8, noise(p.xz / 0.35 + 9.0)) * near * 0.7);
+      pc = mix(pc, vec3f(0.29, 0.28, 0.26), smoothstep(0.6, 0.85, noise(ROT * p.xz / 0.3 + 9.0)) * near * 0.5);
       pc = mix(pc, pc * 0.6, smoothstep(0.3, 0.7, noise(p.xz / 3.5 + 4.0)) * 0.4);
       if (cls == 2u) {                                // track: grassy strip between the ruts
         pc = mix(pc, albedo * 0.95, (1.0 - smoothstep(0.2, 0.42, dcen)) * 0.85);
