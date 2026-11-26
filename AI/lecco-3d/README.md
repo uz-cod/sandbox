@@ -1,7 +1,7 @@
 # Montagne di Lecco — WebGPU
 
 Real-time scene of the real mountains around Lecco (Italy), built on raw WebGPU + WGSL
-(no engines) and shipped as a single self-contained `dist/index.html` (~1.6 MB).
+(no engines) and shipped as a single self-contained `dist/index.html` (~2.2 MB).
 External data: the Copernicus GLO-30 DEM and OpenStreetMap (trails, hiking routes, huts,
 bivouacs, crosses); everything else is procedural.
 
@@ -68,7 +68,7 @@ npm run shot -- "peak=2&hud=0"   # headless screenshots into shots/ (needs Playw
 - The frame loop does no JS allocations of its own (preallocated uniforms, descriptors,
   matrices); only WebGPU's own per-frame objects (encoder, swap-chain view) are created.
 
-## Known limits (phase 1)
+## Known limits
 
 - Beyond the 25 km crop the terrain is a placeholder (mirrored edge fading into low hills);
   a real horizon needs the neighbouring tiles (N46 E009, N45 E008, N46 E008).
