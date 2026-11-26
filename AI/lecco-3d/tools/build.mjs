@@ -9,7 +9,7 @@ import { bakeOsm } from './bake-osm.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const gen = join(ROOT, 'src/generated/terrain.bin');
-const bakeInputs = ['tools/bake-dem.mjs', 'tools/tiff.mjs', 'src/peaks.js'].map((p) => join(ROOT, p));
+const bakeInputs = ['tools/bake-dem.mjs', 'tools/tiff.mjs', 'src/peaks.js', 'data/osm/extract.json'].map((p) => join(ROOT, p));
 
 const stale = !existsSync(gen) || bakeInputs.some((p) => statSync(p).mtimeMs > statSync(gen).mtimeMs);
 if (stale) { console.log('baking DEM…'); bake(); }

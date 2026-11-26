@@ -199,3 +199,14 @@ fn zoneWeights(p: vec3f, nb: vec3f, curv: f32) -> vec3f {
   snowW *= 1.0 - smoothstep(0.30, 0.50, slope - max(curv, 0.0) * 0.05);
   return vec3f(forestW, rockW, snowW);
 }
+
+// Built-up valley floors (procedural, no building data): flat, low ground, clustered into towns,
+// densest in the Lecco basin. Shared by the terrain shading and the house scatter.
+const LECCO_XZ = vec2f(-620.0, 3330.0);
+fn urbanWeight(p: vec3f, nb: vec3f) -> f32 {
+  let flat = smoothstep(0.86, 0.95, nb.y);
+  let low = 1.0 - smoothstep(330.0, 460.0, p.y);
+  let towns = noise(p.xz / 1500.0) * 0.75 + noise(p.xz / 380.0 + 5.0) * 0.35 - 0.22;
+  let lecco = exp(-dot(p.xz - LECCO_XZ, p.xz - LECCO_XZ) / (2.0 * 1300.0 * 1300.0));
+  return flat * low * smoothstep(0.05, 0.5, towns + lecco * 0.95);
+}

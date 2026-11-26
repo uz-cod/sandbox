@@ -11,7 +11,7 @@
 
 struct Tree { pos: vec4f, info: vec4f };          // xyz base, height | type, hue, rotation, fade
 @group(0) @binding(10) var<storage, read_write> trees: array<Tree>;
-@group(0) @binding(11) var<storage, read_write> args: array<atomic<u32>, 12>;  // 3 x drawIndirect args
+@group(0) @binding(11) var<storage, read_write> args: array<atomic<u32>, 16>;  // 4 x drawIndirect args
 
 const NEAR_CELL: f32 = 4.0;
 const NEAR_R: f32 = 300.0;
@@ -23,7 +23,11 @@ const FADE0: f32 = 240.0;             // near -> far cross-fade band
 const FADE1: f32 = 300.0;
 const NEAR_MAX: u32 = 30000u;         // per type
 const FAR_MAX: u32 = 200000u;
-const SINK: f32 = 0.45;               // the DSM already contains the canopy: plant trees partly "in" it
+const SINK: f32 = 0.45;
+const HOUSE_CELL: f32 = 16.0;
+const HOUSE_R: f32 = 4000.0;
+const HOUSE_SIDE: u32 = 500u;         // 2 * HOUSE_R / HOUSE_CELL
+const HOUSE_MAX: u32 = 60000u;               // the DSM already contains the canopy: plant trees partly "in" it
 
 fn h2(c: vec2f, k: f32) -> f32 { return hash2(c * 1.37 + vec2f(k * 17.3, k * 5.1)) * 0.5 + 0.5; }
 
@@ -43,7 +47,7 @@ fn plant(cellXZ: vec2f, cell: f32, near: bool) -> Tree {
   var h: f32;
   if (near) { h = heightAt(xz); } else { h = heightFast(xz); }
   let zw = zoneWeights(vec3f(xz.x, h, xz.y), nb, ns.z);
-  let w = zw.x * (1.0 - zw.y) * (1.0 - zw.z);
+  let w = zw.x * (1.0 - zw.y) * (1.0 - zw.z) * (1.0 - smoothstep(0.15, 0.35, urbanWeight(vec3f(xz.x, h, xz.y), nb)));
   if (h2(cellXZ, 3.0) > w * 0.9) { return t; }
   let wuv = ((xz - F.terr.xy) / F.terr.z + 0.5) / F.terr.w;
   if (all(wuv >= vec2f(0.0)) && all(wuv <= vec2f(1.0))) {
@@ -94,8 +98,55 @@ fn csFar(@builtin(global_invocation_id) id: vec3u) {
   if (i < FAR_MAX) { trees[2u * NEAR_MAX + i] = t; }
 }
 
+// Houses: same buffer, after the tree regions. pos = (x, base, z, height), info = (length, width, angle, colour seed)
+@compute @workgroup_size(8, 8)
+fn csHouses(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= HOUSE_SIDE || id.y >= HOUSE_SIDE) { return; }
+  let cellXZ = floor(F.camPos.xz / HOUSE_CELL) - f32(HOUSE_SIDE / 2u) + vec2f(id.xy);
+  let xz = (cellXZ + 0.25 + vec2f(h2(cellXZ, 11.0), h2(cellXZ, 12.0)) * 0.5) * HOUSE_CELL;
+  let d = distance(xz, F.camPos.xz);
+  if (d > HOUSE_R) { return; }
+  let uv = (xz - F.ext.xy) * F.ext.w;
+  if (any(uv < vec2f(0.0)) || any(uv > vec2f(1.0))) { return; }
+  let ns = textureSampleLevel(normalTexT, linSampT, uv, 0.0);
+  let nb = vec3f(ns.x, sqrt(max(0.0, 1.0 - ns.x * ns.x - ns.y * ns.y)), ns.y);
+  let h = heightFast(xz);
+  let u = urbanWeight(vec3f(xz.x, h, xz.y), nb);
+  if (h2(cellXZ, 13.0) > u * u * 0.8) { return; }   // sparse at the edges of the towns
+  let wuv = ((xz - F.terr.xy) / F.terr.z + 0.5) / F.terr.w;
+  if (all(wuv >= vec2f(0.0)) && all(wuv <= vec2f(1.0))) {
+    if (textureSampleLevel(waterTexT, linSampT, wuv, 0.0).r > 0.05) { return; }
+  }
+  let ft = features(xz, true);
+  if (ft.padW > 0.0 || ft.edge < 5.0) { return; }
+  let lecco = exp(-dot(xz - LECCO_XZ, xz - LECCO_XZ) / (2.0 * 1500.0 * 1500.0));
+  let L = mix(8.0, 15.0, h2(cellXZ, 14.0)) * (1.0 + lecco * 0.5);
+  let W = mix(6.0, 9.5, h2(cellXZ, 15.0));
+  let floors = floor(mix(2.0, 3.99, h2(cellXZ, 16.0)) + lecco * h2(cellXZ, 17.0) * 3.0);
+  let H = floors * 3.0 + 0.6;
+  // streets: houses in a neighbourhood share an orientation
+  let ang = noise(xz / 650.0) * 3.1416 + select(0.0, 1.5708, h2(cellXZ, 18.0) > 0.8);
+  // streets: a loose grid in the local orientation, plus a few open spaces
+  let a0 = noise(xz / 650.0) * 3.1416;
+  let sq = vec2f(xz.x * cos(a0) + xz.y * sin(a0), -xz.x * sin(a0) + xz.y * cos(a0));
+  let st = fract(sq / vec2f(58.0, 74.0));
+  if (min(min(st.x, 1.0 - st.x), min(st.y, 1.0 - st.y)) < 0.12) { return; }
+  if (noise(xz / 140.0 + 3.0) > 0.45) { return; }
+  let c = F.viewProj * vec4f(vec3f(xz.x, h + H * 0.5, xz.y) - F.camPos.xyz, 1.0);
+  let r = L;
+  if (c.w < -r || abs(c.x) > c.w * 1.05 + r * 1.8 || abs(c.y) > c.w * 1.05 + r * 1.8) { return; }
+  let i = atomicAdd(&args[13u], 1u);
+  if (i < HOUSE_MAX) {
+    var t: Tree;
+    t.pos = vec4f(xz.x, h - 3.0, xz.y, H + 3.0);      // the DSM already holds the roofs: start below it
+    t.info = vec4f(L, W, ang, h2(cellXZ, 19.0) + (1.0 - smoothstep(HOUSE_R - 600.0, HOUSE_R, d)) * 2.0);
+    trees[2u * NEAR_MAX + FAR_MAX + i] = t;
+  }
+}
+
 @compute @workgroup_size(1)
 fn csClamp() {
+  atomicMin(&args[13u], HOUSE_MAX);
   // counters may overshoot the regions: clamp the instance counts used by drawIndirect
   atomicMin(&args[1u], NEAR_MAX);
   atomicMin(&args[5u], NEAR_MAX);

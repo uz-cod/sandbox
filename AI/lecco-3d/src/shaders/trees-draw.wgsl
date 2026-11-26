@@ -152,3 +152,58 @@ fn fsTreeBB(i: BOut) -> @location(0) vec4f {
   o.a = i.info.w;
   return o;
 }
+
+// ------------------------------------------------------------------ houses (procedural, from the scatter)
+struct HOut {
+  @builtin(position) pos: vec4f,
+  @location(0) world: vec3f,
+  @location(1) nrm: vec3f,
+  @location(2) loc: vec3f,                     // local metres (x along length, y up, z across)
+  @location(3) @interpolate(flat) info: vec4f,
+  @location(4) @interpolate(flat) dims: vec4f, // length, wall height, width, part
+};
+
+@vertex
+fn vsHouse(@location(0) lp: vec3f, @location(1) ln: vec3f, @location(2) part: f32,
+           @location(3) ip: vec4f, @location(4) info: vec4f) -> HOut {
+  let L = info.x; let W = info.y; let H = ip.w;
+  let rise = 0.30 * W;
+  var scale = vec3f(L, H, W);
+  var l = lp * scale;
+  if (part > 0.5) { scale = vec3f(L * 1.04, rise, W * 1.08); l = vec3f(lp.x * L * 1.04, H + lp.y * rise, lp.z * W * 1.08); }
+  let w = ip.xyz + rotY(l, info.z);
+  var o: HOut;
+  o.pos = F.viewProj * vec4f(w - F.camPos.xyz, 1.0);
+  o.world = w;
+  o.nrm = rotY(normalize(ln / scale), info.z);
+  o.loc = l;
+  o.info = info;
+  o.dims = vec4f(L, H, W, part);
+  return o;
+}
+
+@fragment
+fn fsHouse(i: HOut) -> @location(0) vec4f {
+  let seed = fract(i.info.w);
+  let n = normalize(i.nrm);
+  var albedo: vec3f;
+  if (i.dims.w > 0.5 && i.dims.w < 1.5) {
+    // roof: terracotta tiles, a few grey ones
+    albedo = select(vec3f(0.30, 0.12, 0.07), vec3f(0.17, 0.16, 0.16), fract(seed * 7.13) > 0.82);
+    albedo *= 0.85 + 0.2 * step(0.5, fract(i.loc.x * 3.0)) * (1.0 - smoothstep(60.0, 300.0, distance(i.world, F.camPos.xyz)));
+  } else {
+    var pal = array<vec3f, 5>(vec3f(0.58, 0.52, 0.40), vec3f(0.56, 0.42, 0.22), vec3f(0.56, 0.36, 0.28), vec3f(0.64, 0.63, 0.58), vec3f(0.46, 0.45, 0.42));
+    albedo = pal[u32(seed * 4.999)];
+    // windows: one per 3 m along the wall, one row per floor
+    let along = select(i.loc.z, i.loc.x, abs(dot(n, rotY(vec3f(0.0, 0.0, 1.0), i.info.z))) > 0.7);
+    let fy = fract((i.loc.y - 3.0 - 0.6) / 3.0);
+    let fx = fract(along / 3.0 + 0.5);
+    let win = i.loc.y > 3.6 && i.loc.y < i.dims.y - 3.4 && fy > 0.3 && fy < 0.75 && fx > 0.32 && fx < 0.68;
+    let door = i.loc.y > 3.0 && i.loc.y < 5.2 && abs(along) < 0.6;
+    if (win || door) { albedo = vec3f(0.05, 0.05, 0.055); }
+  }
+  let col = shadeTree(i.world, n, albedo, 0.85, 0.0);
+  var o = tonemap(col, i.pos.xy);
+  o.a = clamp(floor(i.info.w) * 0.5, 0.0, 1.0);   // fade out at the edge of the house range
+  return o;
+}

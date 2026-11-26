@@ -52,5 +52,17 @@ export function buildTreeMeshes() {
     pushTri(b, a.p, bb.p, cc.p, a.n, bb.n, cc.n, 1);
     pushTri(b, a.p, cc.p, d.p, a.n, cc.n, d.n, 1);
   }
-  return { conifer: new Float32Array(c), broadleaf: new Float32Array(b) };
+  // house: unit box (x, z in [-0.5, 0.5], y in [0, 1]) + gable roof prism (part 1, y = rise fraction)
+  const hs = [];
+  const quad = (a, b2, c2, d, n, part) => { pushTri(hs, a, b2, c2, n, n, n, part); pushTri(hs, a, c2, d, n, n, n, part); };
+  quad([-0.5, 0, 0.5], [0.5, 0, 0.5], [0.5, 1, 0.5], [-0.5, 1, 0.5], [0, 0, 1], 0);
+  quad([0.5, 0, -0.5], [-0.5, 0, -0.5], [-0.5, 1, -0.5], [0.5, 1, -0.5], [0, 0, -1], 0);
+  quad([0.5, 0, 0.5], [0.5, 0, -0.5], [0.5, 1, -0.5], [0.5, 1, 0.5], [1, 0, 0], 0);
+  quad([-0.5, 0, -0.5], [-0.5, 0, 0.5], [-0.5, 1, 0.5], [-0.5, 1, -0.5], [-1, 0, 0], 0);
+  // roof slopes (normals for unit rise over half-width 0.5) and gable triangles
+  quad([-0.5, 0, 0.5], [0.5, 0, 0.5], [0.5, 1, 0], [-0.5, 1, 0], [0, 0.5, 1], 1);
+  quad([0.5, 0, -0.5], [-0.5, 0, -0.5], [-0.5, 1, 0], [0.5, 1, 0], [0, 0.5, -1], 1);
+  pushTri(hs, [0.5, 0, 0.5], [0.5, 0, -0.5], [0.5, 1, 0], [1, 0, 0], [1, 0, 0], [1, 0, 0], 2);
+  pushTri(hs, [-0.5, 0, -0.5], [-0.5, 0, 0.5], [-0.5, 1, 0], [-1, 0, 0], [-1, 0, 0], [-1, 0, 0], 2);
+  return { conifer: new Float32Array(c), broadleaf: new Float32Array(b), house: new Float32Array(hs) };
 }

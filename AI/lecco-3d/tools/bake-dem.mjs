@@ -6,7 +6,7 @@
 // Steps: crop a square around CROP in a local metric (equirectangular) frame, resample the
 // DEM with Catmull-Rom, flatten lakes per connected component, quantise to uint16 and encode
 // with a planar predictor (a + b - c) so deflate compresses the smooth terrain well.
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { deflateRawSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -119,6 +119,34 @@ export function bake({ quiet = false } = {}) {
   }
   const big = levels.map((l, i) => ({ ...l, i })).filter((l) => l.count > 200).sort((a, b) => b.count - a.count);
   log(`water bodies: ${levels.length} (large: ${big.map((l) => `${l.level.toFixed(1)} m / ${((l.count * SP * SP) / 1e6).toFixed(1)} km²`).join(', ')})`);
+
+  // --- restore summit pinnacles: 30 m cells average narrow limestone towers with the cols
+  // between them (Resegone teeth lose 40-95 m while the cols are within ~20 m). Each OSM peak
+  // with an elevation gets a steep cone (~51°) up to its surveyed height; cols stay untouched.
+  const EXTRACT = join(ROOT, 'data/osm/extract.json');
+  if (existsSync(EXTRACT)) {
+    const SLOPE = 1.25;
+    const osmPeaks = JSON.parse(readFileSync(EXTRACT, 'utf8')).peaks;
+    let fixed = 0, maxFix = 0, maxName = '';
+    for (const pk of osmPeaks) {
+      if (!pk.ele) continue;
+      const [px, pz] = toXZ(pk.lat / 1e6, pk.lon / 1e6);
+      const ci = Math.round((px + HALF) / SP), cj = Math.round((pz + HALF) / SP);
+      if (ci < 4 || cj < 4 || ci >= N - 4 || cj >= N - 4) continue;
+      let m = -Infinity;
+      for (let dj = -3; dj <= 3; dj++) for (let di = -3; di <= 3; di++) m = Math.max(m, H[(cj + dj) * N + ci + di]);
+      const deficit = pk.ele - m;
+      if (deficit < 6 || deficit > 160) continue;               // fine already, or suspicious data
+      const R = Math.ceil(deficit / SLOPE / SP) + 1;
+      for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) {
+        const s = (cj + dj) * N + ci + di;
+        H[s] = Math.max(H[s], pk.ele - Math.hypot(di, dj) * SP * SLOPE);
+      }
+      fixed++;
+      if (deficit > maxFix) { maxFix = deficit; maxName = pk.name; }
+    }
+    log(`summits restored from OSM elevations: ${fixed} (largest: ${maxName} +${maxFix.toFixed(0)} m)`);
+  }
 
   // --- distance from shore inside water (chamfer 3-4, in samples) ---
   const dist = new Float32Array(N * N);

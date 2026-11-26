@@ -20,7 +20,7 @@ const MARGIN = 6000;             // precomputed region extends this far beyond t
 const SAMPLES = 4;
 const FOV_Y = (60 * Math.PI) / 180;
 const NEAR = 0.5;
-const TREE_NEAR_MAX = 30000, TREE_FAR_MAX = 200000, TREE_STRIDE = 32;   // must match trees-scatter.wgsl
+const TREE_NEAR_MAX = 30000, TREE_FAR_MAX = 200000, HOUSE_MAX = 60000, TREE_STRIDE = 32;   // must match trees-scatter.wgsl
 
 // Frame uniform layout (floats), see struct Frame in common.wgsl
 const U_VIEWPROJ = 0, U_INVVP = 16, U_CAM = 32, U_SUN = 36, U_SUNCOL = 40, U_TERR = 44, U_EXT = 48, U_SCREEN = 52, U_FOG = 56, U_MISC = 60, U_GRID = 64;
@@ -144,11 +144,11 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   // ---------------------------------------------------------------- trees
   const treeMeshes = buildTreeMeshes();
   const vbuf = (data) => { const b = device.createBuffer({ size: data.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }); device.queue.writeBuffer(b, 0, data); return b; };
-  const broadBuf = vbuf(treeMeshes.broadleaf), conBuf = vbuf(treeMeshes.conifer);
-  const treesBuf = device.createBuffer({ size: (2 * TREE_NEAR_MAX + TREE_FAR_MAX) * TREE_STRIDE, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX });
-  const argsBuf = device.createBuffer({ size: 48, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST });
+  const broadBuf = vbuf(treeMeshes.broadleaf), conBuf = vbuf(treeMeshes.conifer), houseBuf = vbuf(treeMeshes.house);
+  const treesBuf = device.createBuffer({ size: (2 * TREE_NEAR_MAX + TREE_FAR_MAX + HOUSE_MAX) * TREE_STRIDE, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX });
+  const argsBuf = device.createBuffer({ size: 64, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST });
   // drawIndirect args: [broadleaf mesh | conifer mesh | billboards]; instance counts filled by the scatter
-  const argsInit = new Uint32Array([treeMeshes.broadleaf.length / 7, 0, 0, 0, treeMeshes.conifer.length / 7, 0, 0, 0, 6, 0, 0, 0]);
+  const argsInit = new Uint32Array([treeMeshes.broadleaf.length / 7, 0, 0, 0, treeMeshes.conifer.length / 7, 0, 0, 0, 6, 0, 0, 0, treeMeshes.house.length / 7, 0, 0, 0]);
   let treesOn = opts.trees !== false;
 
   // ---------------------------------------------------------------- precompute (startup)
@@ -179,11 +179,19 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   const depthStencil = { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'greater' };
   const multisample = { count: SAMPLES };
   const scatterPL = device.createPipelineLayout({ bindGroupLayouts: [scatterLayout] });
-  const [csNear, csFar, csClamp] = await Promise.all(['csNear', 'csFar', 'csClamp'].map((entryPoint) =>
+  const [csNear, csFar, csHouses, csClamp] = await Promise.all(['csNear', 'csFar', 'csHouses', 'csClamp'].map((entryPoint) =>
     device.createComputePipelineAsync({ layout: scatterPL, compute: { module: scatterMod, entryPoint } })));
   const instAttrs = [{ shaderLocation: 3, offset: 0, format: 'float32x4' }, { shaderLocation: 4, offset: 16, format: 'float32x4' }];
   const a2c = { count: SAMPLES, alphaToCoverageEnabled: true };
-  const [terrainPipe, skyPipe, buildPipe, pinPipe, treeMeshPipe, treeBBPipe] = await Promise.all([
+  const meshVB = [
+    { arrayStride: 28, attributes: [
+      { shaderLocation: 0, offset: 0, format: 'float32x3' },
+      { shaderLocation: 1, offset: 12, format: 'float32x3' },
+      { shaderLocation: 2, offset: 24, format: 'float32' },
+    ] },
+    { arrayStride: TREE_STRIDE, stepMode: 'instance', attributes: instAttrs },
+  ];
+  const [terrainPipe, skyPipe, buildPipe, pinPipe, treeMeshPipe, treeBBPipe, housePipe] = await Promise.all([
     device.createRenderPipelineAsync({
       layout: device.createPipelineLayout({ bindGroupLayouts: [terrainLayout] }),
       vertex: { module: terrainMod, entryPoint: 'vsTerrain' },
@@ -239,6 +247,13 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       layout: device.createPipelineLayout({ bindGroupLayouts: [buildLayout] }),
       vertex: { module: treeMod, entryPoint: 'vsTreeBB', buffers: [{ arrayStride: TREE_STRIDE, stepMode: 'instance', attributes: instAttrs }] },
       fragment: { module: treeMod, entryPoint: 'fsTreeBB', targets: [{ format }] },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil, multisample: a2c,
+    }),
+    device.createRenderPipelineAsync({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [buildLayout] }),
+      vertex: { module: treeMod, entryPoint: 'vsHouse', buffers: meshVB },
+      fragment: { module: treeMod, entryPoint: 'fsHouse', targets: [{ format }] },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil, multisample: a2c,
     }),
@@ -362,6 +377,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       cp.setBindGroup(0, scatterBG);
       cp.setPipeline(csNear); cp.dispatchWorkgroups(19, 19);   // 150 / 8
       cp.setPipeline(csFar); cp.dispatchWorkgroups(57, 57);    // 450 / 8
+      cp.setPipeline(csHouses); cp.dispatchWorkgroups(63, 63); // 500 / 8
       cp.setPipeline(csClamp); cp.dispatchWorkgroups(1);
       cp.end();
     }
@@ -389,6 +405,10 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       pass.setPipeline(treeBBPipe);
       pass.setVertexBuffer(0, treesBuf, 2 * TREE_NEAR_MAX * TREE_STRIDE);
       pass.drawIndirect(argsBuf, 32);
+      pass.setPipeline(housePipe);
+      pass.setVertexBuffer(0, houseBuf);
+      pass.setVertexBuffer(1, treesBuf, (2 * TREE_NEAR_MAX + TREE_FAR_MAX) * TREE_STRIDE);
+      pass.drawIndirect(argsBuf, 48);
     }
     if (pinCount > 0 && frame[U_MISC + 3] > 0) {
       pass.setPipeline(pinPipe);

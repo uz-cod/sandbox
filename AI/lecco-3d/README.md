@@ -74,6 +74,12 @@ npm run shot -- "peak=2&hud=0"   # headless screenshots into shots/ (needs Playw
   lakes kept clear, frustum culling, and atomic counters feeding `drawIndirect`. Trees are planted
   partly into the surface because the DSM already contains the canopy. LOD cross-fades use
   alpha-to-coverage. `B` toggles them (or `trees=0`).
+- **Summit pinnacles**: 30 m cells average narrow limestone towers with the cols between them
+  (Resegone teeth lost 40–95 m, cols only ~20 m), so the bake raises every OSM peak with an
+  elevation to its surveyed height with a steep (~51°) cone; cols are untouched (117 peaks).
+- **Towns** (procedural, no building data): flat low valley floors clustered by noise and densest
+  in the Lecco basin get instanced houses (plaster walls, tile roofs, windows) within 4 km from the
+  same compute pass as the trees; beyond, a roofscape tint on the terrain.
 - **Startup GPU passes**: normals/curvature, soft sun shadows (heightfield ray march) and
   horizon-based AO over the crop + 6 km margin.
 - **Terrain**: 10 nested clipmap rings (128² cells, 2 m → 1 km spacing) with CDLOD-style

@@ -60,7 +60,7 @@ function showTrails(i) {
     for (const it of t.its) {
       const r = document.createElement('div');
       r.className = 'it';
-      r.title = [it.name, DIFF_LABEL[it.diff] ? `difficoltà ${it.diff}: ${DIFF_LABEL[it.diff]}` : 'difficoltà non indicata',
+      r.title = [it.name, it.fullFrom ? `itinerario completo da ${it.fullFrom} (il tratto iniziale su strada non è nei dati)` : '', DIFF_LABEL[it.diff] ? `difficoltà ${it.diff}: ${DIFF_LABEL[it.diff]}` : 'difficoltà non indicata',
         it.timeSrc === 'osm' ? 'tempo da OSM' : 'tempo stimato (4 km/h, 400 m/h)', ...it.stops.map((s) => `${s.name} a ${fmtKm(s.along)}`)].filter(Boolean).join('\n');
       r.innerHTML = `<span class="r">${esc(it.ref || '–')}</span><span class="d d${esc(it.diff || 'x')}">${esc(it.diff || '?')}</span>`
         + `<span class="n">${fmtKm(it.length)} · +${it.dplus} m · ${fmtTime(it.minutes)}${it.timeSrc === 'osm' ? '' : '*'}</span>`;

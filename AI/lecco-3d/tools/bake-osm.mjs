@@ -118,7 +118,10 @@ export function bakeOsm({ quiet = false } = {}) {
   const routes = [];
   const routePts = [];
   for (const r of ex.routes) {
+    const present = r.ways.map((id) => wayGeom.has(id));
     const pieces = r.ways.map((id) => wayGeom.get(id)).filter(Boolean).map((p) => p.slice());
+    // route ends are real only if no member is missing there (members run from -> to)
+    const leadMissing = present.indexOf(true) > 0, trailMissing = present.lastIndexOf(true) < present.length - 1;
     if (!pieces.length) continue;
     const first = pieces[0];
     const f0 = [first[0], first[1]], f1 = [first[first.length - 2], first[first.length - 1]];
@@ -129,6 +132,7 @@ export function bakeOsm({ quiet = false } = {}) {
       if (used[s0]) continue;
       used[s0] = 1;
       let chain = pieces[s0];
+      const members = new Set([s0]);
       for (let grew = true; grew;) {
         grew = false;
         for (let k = 0; k < pieces.length; k++) {
@@ -141,12 +145,13 @@ export function bakeOsm({ quiet = false } = {}) {
           else if (near(sx0, sz0, p[n - 2], p[n - 1])) chain = p.slice(0, -2).concat(chain);
           else if (near(sx0, sz0, p[0], p[1])) chain = rev(p).slice(0, -2).concat(chain);
           else continue;
-          used[k] = 1; grew = true;
+          used[k] = 1; grew = true; members.add(k);
         }
       }
-      chains.push(chain);
+      chains.push({ pts: chain, members });
     }
-    for (const chain of chains) {
+    for (const { pts: chain, members } of chains) {
+      const hasFirst = members.has(0) && !leadMissing, hasLast = members.has(pieces.length - 1) && !trailMissing;
       const dEnd = (x, z) => Math.min(Math.hypot(x - f0[0], z - f0[1]), Math.hypot(x - f1[0], z - f1[1]));
       const fromAtStart = dEnd(chain[0], chain[1]) <= dEnd(chain[chain.length - 2], chain[chain.length - 1]);
       const s = simplify(chain, 0.5);
@@ -164,7 +169,7 @@ export function bakeOsm({ quiet = false } = {}) {
       }
       if (!touches.length) continue;
       routes.push({ id: r.id, ref: r.ref, name: r.name, osmc: r.osmc, operator: r.operator, offset: routePts.length / 2, count: s.length / 2, length: Math.round(len), touches,
-        from: r.from, to: r.to, cai: r.cai, durF: r.durF, durB: r.durB, fromAtStart, wayIds: r.ways });
+        from: r.from, to: r.to, cai: r.cai, durF: r.durF, durB: r.durB, fromAtStart, hasFirst, hasLast, wayIds: r.ways });
       routePts.push(...s);
     }
   }
@@ -252,7 +257,11 @@ export function bakeOsm({ quiet = false } = {}) {
         const fullDur = Math.max(parseDur(r.durF), parseDur(r.durB));
         const fragment = fullDur > est * 3 + 30;           // only a piece of a much longer route lies in the scene
         if (fragment) continue;                            // the cut end of a route piece is not a real trailhead
-        let name = (fragment ? '' : (fromEnd ? r.from : r.to)) || '';
+        // the relation's from/to only names this end if the chain really reaches the route end
+        const realEnd = fromEnd ? r.hasFirst : r.hasLast;
+        let name = (fragment || !realEnd ? '' : (fromEnd ? r.from : r.to)) || '';
+        const fullFrom = !realEnd && (fromEnd ? r.from : r.to) ? (fromEnd ? r.from : r.to) : '';
+        if (!name && fullFrom) name = `${fullFrom} → sentiero a ${Math.round(h0)} m`;
         if (!name) {
           let best = 400, bn = '';
           for (const nm of named) { const d = Math.hypot(nm.x - sx, nm.z - sz); if (d < best) { best = d; bn = nm.name; } }
@@ -260,11 +269,11 @@ export function bakeOsm({ quiet = false } = {}) {
         }
         const connector = /^(innesto|incrocio|bivio|sentiero\s|percorso\s)/i.test(name);
         // time: OSM duration in the ascent direction, else CAI-style estimate (4 km/h, 400 m/h)
-        let minutes = fragment ? 0 : parseDur(fromEnd ? r.durF : r.durB);
+        let minutes = fragment || !realEnd ? 0 : parseDur(fromEnd ? r.durF : r.durB);
         const timeSrc = minutes ? 'osm' : 'stima';
         if (!minutes || minutes < est * 0.4 || minutes > est * 3) minutes = est;
         itineraries.push({ route: ri, peak: t.peak, ref: r.ref, name: r.name, start: r.offset + end, end: r.offset + t.index,
-          trailhead: name, connector, diff, length: Math.round(len), dplus: Math.round(dplus), minutes, timeSrc, x: sx, z: sz, ele: Math.round(h0) });
+          trailhead: name, fullFrom, connector, diff, length: Math.round(len), dplus: Math.round(dplus), minutes, timeSrc, x: sx, z: sz, ele: Math.round(h0) });
       }
     }
   });
