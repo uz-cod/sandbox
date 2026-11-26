@@ -14,6 +14,50 @@ struct Level {
 @group(0) @binding(4) var shadeTex: texture_2d<f32>;    // (sun vis, ao, sky view) over ext
 @group(0) @binding(5) var waterTex: texture_2d<f32>;    // (water fraction, shore distance) over crop
 @group(0) @binding(6) var linSamp: sampler;
+// OSM features (see src/osm-data.js): trail segments (a.xy, b.xy) followed by pads
+// (2 x vec4: centre, cos, sin | half size u, half size w, base height, margin);
+// cells = CSR grid: [cellCount + 1 start offsets | items]; item high bit = pad.
+@group(0) @binding(7) var<storage, read> segs: array<vec4f>;
+@group(0) @binding(8) var<storage, read> segAttr: array<u32>;
+@group(0) @binding(9) var<storage, read> cells: array<u32>;
+
+struct Feat { edge: f32, center: f32, halfW: f32, attr: u32, padW: f32, padH: f32 };
+
+fn features(xz: vec2f, wantTrails: bool) -> Feat {
+  var f: Feat;
+  f.edge = 1e9; f.center = 1e9; f.halfW = 0.0; f.attr = 0u; f.padW = 0.0; f.padH = 0.0;
+  let g = (xz - F.grid.xy) / F.grid.z;
+  let n = F.grid.w;
+  if (g.x < 0.0 || g.y < 0.0 || g.x >= n || g.y >= n) { return f; }
+  let c = u32(g.y) * u32(n) + u32(g.x);
+  let a = cells[c];
+  let b = min(cells[c + 1u], a + 160u);
+  for (var i = a; i < b; i++) {
+    let it = cells[i];
+    if ((it & 0x80000000u) != 0u) {
+      let k = it & 0x7fffffffu;
+      let p0 = segs[k];
+      let p1 = segs[k + 1u];
+      let d = xz - p0.xy;
+      let local = vec2f(d.x * p0.z + d.y * p0.w, -d.x * p0.w + d.y * p0.z);
+      let q = abs(local) - p1.xy;
+      let outside = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0);
+      let w = 1.0 - smoothstep(0.0, p1.w, outside);
+      if (w > f.padW) { f.padW = w; f.padH = p1.z; }
+    } else if (wantTrails) {
+      let s = segs[it];
+      let pa = xz - s.xy;
+      let ba = s.zw - s.xy;
+      let h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+      let dc = length(pa - ba * h);
+      let at = segAttr[it];
+      let hw = f32(at >> 16u) * 0.001;
+      let e = dc - hw;
+      if (e < f.edge) { f.edge = e; f.center = dc; f.halfW = hw; f.attr = at; }
+    }
+  }
+  return f;
+}
 
 const GRID: u32 = 128u;
 const RELIEF_WL: f32 = 56.0;   // wavelength of the first micro-relief octave (m)
@@ -54,7 +98,7 @@ fn vsTerrain(@builtin(vertex_index) vid: u32, @builtin(instance_index) li: u32) 
   let gm = gi - fract(gi * 0.5) * 2.0 * morph;
   xz = L.origin + gm * L.spacing;
 
-  let h = heightAt(xz);
+  var h = heightAt(xz);
   var disp = 0.0;
   let uv = extUV(xz);
   if (insideUnit(uv)) {
@@ -62,6 +106,13 @@ fn vsTerrain(@builtin(vertex_index) vid: u32, @builtin(instance_index) li: u32) 
     let ny = sqrt(max(0.0, 1.0 - ns.x * ns.x - ns.y * ns.y));
     let d3 = distance(vec3f(xz.x, h, xz.y), F.camPos.xyz);
     disp = reliefD(xz, RELIEF_WL, 4, d3, 12.0).x * reliefAmp(rockiness(ny, ns.z), waterAt(xz).r) * F.misc.y;
+    if (d3 < 5000.0) {
+      let ft = features(xz, L.spacing < 17.0);
+      h = mix(h, ft.padH, ft.padW);                       // building / cross pads
+      let trailW = 1.0 - smoothstep(0.0, 1.5, ft.edge);   // trails are smooth, slightly sunk
+      disp *= 1.0 - max(ft.padW, trailW);
+      h -= 0.15 * trailW;
+    }
   }
   let world = vec3f(xz.x, h + disp, xz.y);
   var o: VSOut;
@@ -95,11 +146,12 @@ fn material(p: vec3f, nb: vec3f, n: vec3f, curv: f32, relief: f32, dist: f32) ->
   let slope = 1.0 - nb.y;
 
   // --- limestone / dolomite: pale grey, warm stains, strata bands
-  let strata = sin(p.y * 0.55 + n2 * 3.0 + n3 * 1.5) * 0.5 + 0.5;
+  // strata bands fade out before they alias
+  let strata = mix(0.5, sin(p.y * 0.55 + n2 * 3.0 + n3 * 1.5) * 0.5 + 0.5, 1.0 - smoothstep(250.0, 1200.0, dist));
   var rock = mix(vec3f(0.17, 0.165, 0.155), vec3f(0.31, 0.30, 0.28), strata * 0.5 + n3 * 0.25 + 0.2);
   // vertical water / lichen streaks on cliffs
   let tc = normalize(vec2f(-nb.z, nb.x) + vec2f(1e-4, 0.0));
-  let streak = noise(vec2f(dot(p.xz, tc) / 6.0, p.y / 90.0)) * 0.6 + noise(vec2f(dot(p.xz, tc) / 2.2, p.y / 30.0)) * 0.4 * mid;
+  let streak = noise(vec2f(dot(p.xz, tc) / 6.0, p.y / 90.0)) * 0.6 * (1.0 - smoothstep(1500.0, 5000.0, dist)) + noise(vec2f(dot(p.xz, tc) / 2.2, p.y / 30.0)) * 0.4 * (1.0 - smoothstep(150.0, 700.0, dist));
   rock *= mix(1.0, 0.55 + 0.55 * smoothstep(-0.6, 0.6, streak), smoothstep(0.7, 0.45, nb.y));
   rock = mix(rock, vec3f(0.33, 0.28, 0.22), smoothstep(0.3, 0.8, n2) * 0.35);
   rock = mix(rock, vec3f(0.20, 0.21, 0.19), smoothstep(0.35, 0.8, -n3) * 0.4);   // lichen / wet streaks
@@ -192,18 +244,54 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4f {
   let rd = reliefD(p.xz, RELIEF_WL, 8, dist, 60.0);
   let gBase = -nBase.xz / max(nBase.y, 0.05);
   let g = gBase + rd.yz * amp;
-  let n = normalize(vec3f(-g.x, 1.0, -g.y));
+  var n = normalize(vec3f(-g.x, 1.0, -g.y));
   // small-scale cavity term from relief + curvature
   let cavity = clamp(0.8 + rd.x * 0.25 * rock - max(curv, 0.0) * 0.03, 0.5, 1.0);
 
   let surf = material(p, nBase, n, curv, rd.x, dist);
+  var albedo = surf.albedo;
+  if (dist < 6000.0 && water < 0.5) {
+    let ft = features(p.xz, true);
+    if (ft.padW > 0.0) {
+      n = normalize(mix(n, vec3f(0.0, 1.0, 0.0), ft.padW));
+      albedo = mix(albedo, vec3f(0.24, 0.22, 0.19) * (0.85 + 0.3 * noise(p.xz / 0.8)), smoothstep(0.6, 1.0, ft.padW) * 0.7 * (1.0 - surf.snow));
+    }
+    let pf = dist * 1.155 * F.screen.w;              // pixel footprint (m)
+    if (ft.edge < 1.6 + pf) {
+      let hw = ft.halfW;
+      let hwe = max(hw, pf * 0.55);                    // keep sub-pixel trails visible, energy-preserving
+      let cov = hw / hwe * mix(1.0, 0.55, smoothstep(250.0, 2500.0, dist));
+      let aa = pf * 0.5 + 0.06;
+      // irregular edges: grass encroaching, wider worn patches
+      let wob = (noise(p.xz / 1.6) * 0.22 + noise(p.xz / 0.45) * 0.08) * (1.0 - smoothstep(20.0, 150.0, dist));
+      let dcen = ft.center + wob;
+      let m = (1.0 - smoothstep(hwe - aa, hwe + aa, dcen)) * cov;
+      let border = (1.0 - smoothstep(hw, hw + 1.2, dcen)) * (1.0 - smoothstep(40.0, 400.0, dist));
+      let cls = ft.attr & 15u;
+      let grain = noise(p.xz / 0.9) * 0.5 + 0.5;
+      // packed earth with limestone gravel; stones and darker damp patches up close
+      var pc = mix(vec3f(0.14, 0.115, 0.085), vec3f(0.25, 0.23, 0.20), clamp(grain * 0.6 + rock * 0.5, 0.0, 1.0));
+      let near = 1.0 - smoothstep(8.0, 50.0, dist);
+      pc *= 0.8 + 0.35 * noise(p.xz / 0.22) * near;
+      pc = mix(pc, vec3f(0.36, 0.35, 0.32), smoothstep(0.55, 0.8, noise(p.xz / 0.35 + 9.0)) * near * 0.7);
+      pc = mix(pc, pc * 0.6, smoothstep(0.3, 0.7, noise(p.xz / 3.5 + 4.0)) * 0.4);
+      if (cls == 2u) {                                // track: grassy strip between the ruts
+        pc = mix(pc, albedo * 0.95, (1.0 - smoothstep(0.2, 0.42, dcen)) * 0.85);
+      }
+      if (cls == 3u) { pc = vec3f(0.34, 0.33, 0.31) * (0.9 + 0.2 * grain); }
+      let keep = 1.0 - surf.snow * 0.75;
+      albedo = mix(albedo, albedo * vec3f(0.92, 0.85, 0.74), border * 0.55 * keep);
+      albedo = mix(albedo, pc, m * keep);
+      n = normalize(mix(n, nBase, m * 0.8));
+    }
+  }
   let ndl = max(dot(n, Ls), 0.0);
   // wrap a little on snow (subsurface-ish), sharper on rock
   let diff = mix(ndl, max((dot(n, Ls) + 0.25) / 1.25, 0.0), surf.snow * 0.6);
   let sun = F.sunColor.rgb * diff * sunVis;
   let skyAmb = skyRadiance(normalize(vec3f(n.x * 0.5, 1.0, n.z * 0.5))) * 0.55 * skyView;
   let bounce = vec3f(0.10, 0.11, 0.07) * (0.5 - 0.5 * n.y) * F.sunColor.rgb * 0.5;
-  var col = surf.albedo * (sun * mix(1.0, surf.occl, 0.5) + (skyAmb * (0.6 + 0.4 * n.y) + bounce) * ao * cavity * surf.occl);
+  var col = albedo * (sun * mix(1.0, surf.occl, 0.5) + (skyAmb * (0.6 + 0.4 * n.y) + bounce) * ao * cavity * surf.occl);
   // snow sheen
   let Hh = normalize(Ls + V);
   col += F.sunColor.rgb * surf.snow * 0.05 * pow(max(dot(n, Hh), 0.0), 24.0) * sunVis;

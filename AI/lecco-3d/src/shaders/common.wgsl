@@ -11,7 +11,8 @@ struct Frame {
   ext: vec4f,            // precomputed-texture region origin x, origin z, size (m), 1/size
   screen: vec4f,         // width, height, 1/width, 1/height
   fog: vec4f,            // density at 200 m, height falloff, exposure, detail strength
-  misc: vec4f,           // snow line, tree line, unused, unused
+  misc: vec4f,           // snow line, relief scale, debug view, unused
+  grid: vec4f,           // OSM feature grid: origin x, origin z, cell size, cells per side
 };
 
 @group(0) @binding(0) var<uniform> F: Frame;

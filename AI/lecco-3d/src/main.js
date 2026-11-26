@@ -1,7 +1,8 @@
 // Entry point: load data, build the renderer, wire UI and run the frame loop.
 import { loadTerrain, meta, groundHeight, toLatLon } from './terrain-data.js';
+import { loadOsm, osmMeta } from './osm-data.js';
 import { createRenderer } from './renderer.js';
-import { camera, attachInput, placeCamera, updateCamera } from './camera.js';
+import { camera, attachInput, placeCamera, updateCamera, follow, startFollow, stopFollow } from './camera.js';
 
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
@@ -25,6 +26,38 @@ const shotMode = params.has('shot');
 if (params.get('hud') === '0') document.body.classList.add('nohud');
 
 const peaks = meta.peaks.filter((p) => p.found);
+let osm = null;
+let activePeak = -1;
+
+function fmtKm(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
+
+function showTrails(i) {
+  const box = $('trails');
+  box.innerHTML = '';
+  const p = peaks[i];
+  const opts = (p && osm?.routeOptions.get(p.id)) || [];
+  $('trailsHead').textContent = opts.length ? `Sentieri dalla vetta (${opts.length})` : 'Nessun sentiero segnato dalla vetta';
+  opts.forEach((o) => {
+    const b = document.createElement('button');
+    const label = o.ref ? o.ref : (o.name || 'sentiero');
+    const title = o.name && o.ref ? o.name : '';
+    b.title = title;
+    b.innerHTML = `<span class="r">${label}</span><span class="n">verso ${o.toward} · ${fmtKm(o.length)}</span><span class="e">−${Math.round(o.h0 - o.h1)} m</span>`;
+    b.addEventListener('click', (e) => { e.stopPropagation(); beginFollow(o); b.blur(); });
+    box.appendChild(b);
+  });
+}
+
+function beginFollow(o, startDist = 0) {
+  startFollow(osm.routePts, o, startDist);
+  document.body.classList.add('following');
+  const label = o.ref ? `Sentiero ${o.ref}` : 'Sentiero';
+  $('fTitle').textContent = o.name ? `${label} · ${o.name}` : label;
+}
+function endFollow() {
+  stopFollow();
+  document.body.classList.remove('following');
+}
 
 function gotoPeak(i) {
   const p = peaks[i];
@@ -38,8 +71,11 @@ function gotoPeak(i) {
   const y = Math.max(p.h + up, groundHeight(x, z) + 15);
   const th = groundHeight(p.lookX, p.lookZ);
   const pitch = Math.atan2(th - y, d + back) * 0.45;
+  endFollow();
   placeCamera(x, y, z, Math.atan2(dx, -dz), pitch);
   document.querySelectorAll('#peaks button').forEach((b, k) => b.classList.toggle('active', k === i));
+  activePeak = i;
+  showTrails(i);
 }
 
 function buildUI() {
@@ -55,15 +91,21 @@ function buildUI() {
     const k = e.key >= '1' && e.key <= '9' ? Number(e.key) - 1 : -1;
     if (k >= 0 && k < peaks.length) gotoPeak(k);
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
+    if (follow.active) {
+      if (e.code === 'KeyF' || e.code === 'Escape') endFollow();
+      if (e.code === 'Space') follow.auto = !follow.auto;
+    }
   });
-  $('credits').textContent = meta.attribution;
+  $('credits').textContent = `${meta.attribution} · ${osmMeta.attribution}`;
 }
 
 async function main() {
   try {
     status.textContent = 'Decompressione del terreno…';
     const data = await loadTerrain();
-    const renderer = await createRenderer(canvas, data, opts);
+    osm = await loadOsm();
+    console.info(`OSM: ${osm.nSeg} trail segments, ${osm.nPads} pads, max ${osm.maxPerCell} items/cell, ${osm.mesh.length / 10} mesh vertices`);
+    const renderer = await createRenderer(canvas, data, osm, opts);
     console.info(`precompute ${renderer.precomputeMs.toFixed(0)} ms`, renderer.adapterInfo);
 
     const fit = () => {
@@ -84,11 +126,24 @@ async function main() {
     } else {
       const idx = Math.max(0, peaks.findIndex((p) => p.id === start || String(peaks.indexOf(p) + 1) === start));
       gotoPeak(idx);
+      const fp = params.get('follow');           // "<option index>:<metres along>"
+      if (fp) {
+        const [oi, along] = fp.split(':').map(Number);
+        const o = osm.routeOptions.get(peaks[idx].id)?.[oi];
+        if (o) beginFollow(o, along || 0);
+      }
     }
     status.remove();
 
     // HUD (updated a few times per second, not per frame)
     const hudAlt = $('alt'), hudAgl = $('agl'), hudPos = $('pos'), hudFps = $('fps'), hudSpd = $('spd');
+    const fProg = $('fProg'), fState = $('fState');
+    const updateFollowHud = () => {
+      if (!follow.active) return;
+      const o = follow.opt;
+      fProg.textContent = `${fmtKm(follow.s)} / ${fmtKm(follow.total)} · quota ${Math.round(camera.y - follow.eye)} m · arrivo ${Math.round(o.h1)} m`;
+      fState.textContent = follow.s >= follow.total ? 'arrivato' : follow.auto ? 'in cammino' : 'in pausa';
+    };
     const ll = new Float64Array(2);
     let frames = 0, hudT = 0, last = performance.now();
     const fixedTime = params.has('t') ? Number(params.get('t')) : -1;
@@ -108,6 +163,7 @@ async function main() {
         hudAgl.textContent = Math.round(camera.agl);
         hudSpd.textContent = `×${camera.speedMul.toFixed(2)}`;
         hudPos.textContent = `${ll[0].toFixed(5)}N ${ll[1].toFixed(5)}E`;
+        updateFollowHud();
       }
       requestAnimationFrame(tick);
     };
@@ -123,6 +179,7 @@ async function main() {
       toLatLon(camera.x, camera.z, ll);
       hudAlt.textContent = Math.round(camera.y); hudAgl.textContent = Math.round(camera.agl);
       hudPos.textContent = `${ll[0].toFixed(5)}N ${ll[1].toFixed(5)}E`;
+      updateFollowHud();
       window.__ready = true;
       return;
     }

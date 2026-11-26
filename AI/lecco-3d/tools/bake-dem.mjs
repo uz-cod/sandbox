@@ -12,21 +12,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readGeoTiff } from './tiff.mjs';
 import { PEAKS, CROP } from '../src/peaks.js';
+import { metresPerDegree } from './geo.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const RAW = join(ROOT, 'data/raw');
 const DEM_FILE = join(RAW, 'Copernicus_DSM_COG_10_N45_00_E009_00_DEM.tif');
 const WBM_FILE = join(RAW, 'Copernicus_DSM_COG_10_N45_00_E009_00_WBM.tif');
 const OUT_DIR = join(ROOT, 'src/generated');
-
-// Metres per degree at the crop latitude (WGS84 series expansion).
-function metresPerDegree(latDeg) {
-  const p = (latDeg * Math.PI) / 180;
-  return {
-    lat: 111132.954 - 559.822 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p),
-    lon: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p),
-  };
-}
 
 function catmull(t, w) {
   const t2 = t * t, t3 = t2 * t;

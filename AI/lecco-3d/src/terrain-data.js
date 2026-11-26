@@ -60,6 +60,25 @@ export function groundHeight(x, z) {
   return t > 0 ? h + (fallbackHeight(x, z) - h) * t : h;
 }
 
+// Catmull-Rom height, identical to heightAt() in common.wgsl inside the crop (used where
+// the eye is close to the ground: trail following, building bases). Allocation-free.
+function cr(t, p0, p1, p2, p3) {
+  const t2 = t * t, t3 = t2 * t;
+  return (-0.5 * t3 + t2 - 0.5 * t) * p0 + (1.5 * t3 - 2.5 * t2 + 1) * p1 + (-1.5 * t3 + 2 * t2 + 0.5 * t) * p2 + (0.5 * t3 - 0.5 * t2) * p3;
+}
+export function groundHeightCubic(x, z) {
+  const H = terrain.heights, N = meta.samples, maxg = N - 1;
+  const gx = (x - meta.origin[0]) / meta.spacing, gz = (z - meta.origin[1]) / meta.spacing;
+  if (gx < 1 || gz < 1 || gx > maxg - 2 || gz > maxg - 2) return groundHeight(x, z);
+  const ix = Math.floor(gx), iz = Math.floor(gz), fx = gx - ix, fz = gz - iz;
+  let s = (iz - 1) * N + ix - 1;
+  const r0 = cr(fx, H[s], H[s + 1], H[s + 2], H[s + 3]); s += N;
+  const r1 = cr(fx, H[s], H[s + 1], H[s + 2], H[s + 3]); s += N;
+  const r2 = cr(fx, H[s], H[s + 1], H[s + 2], H[s + 3]); s += N;
+  const r3 = cr(fx, H[s], H[s + 1], H[s + 2], H[s + 3]);
+  return cr(fz, r0, r1, r2, r3);
+}
+
 export function toLatLon(x, z, out) {
   out[0] = meta.crop.lat - z / meta.metresPerDegree.lat;
   out[1] = meta.crop.lon + x / meta.metresPerDegree.lon;

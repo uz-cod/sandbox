@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'no
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { bake } from './bake-dem.mjs';
+import { bakeOsm } from './bake-osm.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const gen = join(ROOT, 'src/generated/terrain.bin');
@@ -12,6 +13,9 @@ const bakeInputs = ['tools/bake-dem.mjs', 'tools/tiff.mjs', 'src/peaks.js'].map(
 
 const stale = !existsSync(gen) || bakeInputs.some((p) => statSync(p).mtimeMs > statSync(gen).mtimeMs);
 if (stale) { console.log('baking DEM…'); bake(); }
+const osmGen = join(ROOT, 'src/generated/osm.bin');
+const osmInputs = ['tools/bake-osm.mjs', 'tools/geo.mjs', 'data/osm/extract.json', 'src/peaks.js'].map((p) => join(ROOT, p));
+if (!existsSync(osmGen) || osmInputs.some((p) => statSync(p).mtimeMs > statSync(osmGen).mtimeMs)) { console.log('baking OSM…'); bakeOsm(); }
 
 const result = await build({
   entryPoints: [join(ROOT, 'src/main.js')],

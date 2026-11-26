@@ -1,5 +1,5 @@
 // Free-flying camera. Input handlers only write into preallocated state; update() reads it.
-import { groundHeight } from './terrain-data.js';
+import { groundHeight, groundHeightCubic } from './terrain-data.js';
 
 export const camera = {
   x: 0, y: 1500, z: 0,
@@ -54,7 +54,83 @@ export function placeCamera(x, y, z, yaw, pitch) {
   camera.vx = camera.vy = camera.vz = 0;
 }
 
+// ------------------------------------------------------------------ trail following
+// Walks the camera along a polyline (route chained by the OSM bake) at eye height.
+export const follow = {
+  active: false, pts: null, cum: null, n: 0, total: 0, s: 0, auto: true,
+  speed: 1.5, yawOff: 0, pitchOff: 0, idle: 0, eye: 1.7, opt: null,
+};
+const tmp = new Float64Array(2), tmp2 = new Float64Array(2);
+
+export function startFollow(routePts, opt, startDist = 0) {
+  const n = Math.abs(opt.end - opt.start) + 1;
+  const pts = new Float32Array(n * 2), cum = new Float32Array(n);
+  for (let k = 0, i = opt.start; k < n; k++, i += opt.dir) {
+    pts[2 * k] = routePts[2 * i]; pts[2 * k + 1] = routePts[2 * i + 1];
+    if (k > 0) cum[k] = cum[k - 1] + Math.hypot(pts[2 * k] - pts[2 * k - 2], pts[2 * k + 1] - pts[2 * k - 1]);
+  }
+  Object.assign(follow, { active: true, pts, cum, n, total: cum[n - 1], s: Math.min(startDist, cum[n - 1]), auto: true, yawOff: 0, pitchOff: 0, idle: 0, opt });
+  camera.vx = camera.vy = camera.vz = 0;
+  samplePath(follow.s, tmp);
+  samplePath(follow.s + 12, tmp2);
+  camera.x = tmp[0]; camera.z = tmp[1];
+  camera.y = groundHeightCubic(tmp[0], tmp[1]) + follow.eye;
+  camera.yaw = Math.atan2(tmp2[0] - tmp[0], -(tmp2[1] - tmp[1]));
+  camera.pitch = -0.12;
+}
+export function stopFollow() {
+  if (!follow.active) return;
+  follow.active = false;
+  camera.y += 25;                     // lift off the trail into free flight
+}
+
+function samplePath(s, out) {
+  const { cum, pts, n } = follow;
+  if (s <= 0) { out[0] = pts[0]; out[1] = pts[1]; return; }
+  if (s >= cum[n - 1]) { out[0] = pts[2 * n - 2]; out[1] = pts[2 * n - 1]; return; }
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid; }
+  const t = (s - cum[lo]) / Math.max(1e-6, cum[hi] - cum[lo]);
+  out[0] = pts[2 * lo] + (pts[2 * hi] - pts[2 * lo]) * t;
+  out[1] = pts[2 * lo + 1] + (pts[2 * hi + 1] - pts[2 * lo + 1]) * t;
+}
+
+function wrapAngle(a) { return a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI; }
+
+function updateFollow(dt) {
+  const moved = input.mdx !== 0 || input.mdy !== 0;
+  follow.yawOff += input.mdx * SENS + (input.tr - input.tl) * 1.4 * dt;
+  follow.pitchOff -= input.mdy * SENS - (input.tu - input.td) * 1.0 * dt;
+  follow.pitchOff = Math.max(-1.3, Math.min(1.3, follow.pitchOff));
+  input.mdx = 0; input.mdy = 0;
+  follow.idle = moved ? 0 : follow.idle + dt;
+  if (follow.idle > 3) { const k = 1 - Math.exp(-dt * 1.5); follow.yawOff *= 1 - k; follow.pitchOff *= 1 - k; }
+
+  const manual = input.f - input.b;
+  const dir = manual !== 0 ? manual : follow.auto ? 1 : 0;
+  let v = follow.speed * camera.speedMul * (input.fast ? 4 : 1) * (input.slow ? 0.3 : 1);
+  follow.s = Math.max(0, Math.min(follow.total, follow.s + dir * v * dt));
+  samplePath(follow.s, tmp);
+  const x = tmp[0], z = tmp[1];
+  // heading from a look-ahead point, smoothed
+  samplePath(follow.s + 14, tmp2);
+  let hx = tmp2[0] - x, hz = tmp2[1] - z;
+  if (hx * hx + hz * hz < 1) { samplePath(follow.s - 14, tmp2); hx = x - tmp2[0]; hz = z - tmp2[1]; }
+  const pathYaw = Math.atan2(hx, -hz);
+  const g = groundHeightCubic(x, z);
+  const ahead = groundHeightCubic(tmp2[0], tmp2[1]);
+  const pathPitch = Math.atan2(ahead - g, Math.max(1, Math.hypot(hx, hz))) * 0.6 - 0.08;
+  const k = 1 - Math.exp(-dt * 3);
+  camera.yaw += wrapAngle(pathYaw + follow.yawOff - camera.yaw) * k;
+  camera.pitch += (pathPitch + follow.pitchOff - camera.pitch) * k;
+  camera.x = x; camera.z = z;
+  camera.y += (g + follow.eye - camera.y) * (1 - Math.exp(-dt * 10));
+  if (camera.y < g + 1.2) camera.y = g + 1.2;
+  camera.agl = camera.y - g;
+}
+
 export function updateCamera(dt) {
+  if (follow.active) { updateFollow(dt); return; }
   camera.yaw += input.mdx * SENS + (input.tr - input.tl) * 1.4 * dt;
   camera.pitch -= input.mdy * SENS - (input.tu - input.td) * 1.0 * dt;
   input.mdx = 0; input.mdy = 0;

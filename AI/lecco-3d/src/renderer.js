@@ -4,6 +4,7 @@ import terrainWGSL from './shaders/terrain.wgsl';
 import skyWGSL from './shaders/sky.wgsl';
 import normalsWGSL from './shaders/precompute-normals.wgsl';
 import shadeWGSL from './shaders/precompute-shade.wgsl';
+import buildingsWGSL from './shaders/buildings.wgsl';
 import { meta } from './terrain-data.js';
 import { perspectiveReverseZ, viewFromYawPitch, multiply, invert } from './math.js';
 
@@ -16,9 +17,9 @@ const FOV_Y = (60 * Math.PI) / 180;
 const NEAR = 0.5;
 
 // Frame uniform layout (floats), see struct Frame in common.wgsl
-const U_VIEWPROJ = 0, U_INVVP = 16, U_CAM = 32, U_SUN = 36, U_SUNCOL = 40, U_TERR = 44, U_EXT = 48, U_SCREEN = 52, U_FOG = 56, U_MISC = 60;
+const U_VIEWPROJ = 0, U_INVVP = 16, U_CAM = 32, U_SUN = 36, U_SUNCOL = 40, U_TERR = 44, U_EXT = 48, U_SCREEN = 52, U_FOG = 56, U_MISC = 60, U_GRID = 64;
 
-export async function createRenderer(canvas, { heights, water }, opts) {
+export async function createRenderer(canvas, { heights, water }, osm, opts) {
   if (!navigator.gpu) throw new Error('WebGPU non disponibile in questo browser.');
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
   if (!adapter) throw new Error('Nessun adattatore WebGPU disponibile.');
@@ -44,7 +45,7 @@ export async function createRenderer(canvas, { heights, water }, opts) {
   const linSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
 
   // ---------------------------------------------------------------- uniforms
-  const frame = new Float32Array(64);
+  const frame = new Float32Array(68);
   const frameBuf = device.createBuffer({ size: frame.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const levelData = new Float32Array(LEVELS * 8);
   const levelBuf = device.createBuffer({ size: levelData.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -56,6 +57,7 @@ export async function createRenderer(canvas, { heights, water }, opts) {
   frame.set([extOrigin[0], extOrigin[1], EXT_SIZE, 1 / EXT_SIZE], U_EXT);
   frame.set([5.5e-5, 1 / 1700, opts.exposure, 1.0], U_FOG);
   frame.set([opts.snowLine, opts.relief, opts.debug, 0], U_MISC);
+  frame.set(osm.gridInfo, U_GRID);
   device.queue.writeBuffer(frameBuf, 0, frame);
 
   // ---------------------------------------------------------------- layouts
@@ -73,6 +75,16 @@ export async function createRenderer(canvas, { heights, water }, opts) {
       { binding: 4, visibility: VF, texture: { sampleType: 'float' } },
       { binding: 5, visibility: VF, texture: { sampleType: 'float' } },
       { binding: 6, visibility: VF, sampler: { type: 'filtering' } },
+      { binding: 7, visibility: VF, buffer: { type: 'read-only-storage' } },
+      { binding: 8, visibility: VF, buffer: { type: 'read-only-storage' } },
+      { binding: 9, visibility: VF, buffer: { type: 'read-only-storage' } },
+    ],
+  });
+  const buildLayout = device.createBindGroupLayout({
+    entries: [
+      ...baseEntries,
+      { binding: 2, visibility: VF, texture: { sampleType: 'float' } },
+      { binding: 3, visibility: VF, sampler: { type: 'filtering' } },
     ],
   });
   const skyLayout = device.createBindGroupLayout({ entries: [baseEntries[0]] });
@@ -89,9 +101,21 @@ export async function createRenderer(canvas, { heights, water }, opts) {
     if (errs.length) throw new Error(`${label}: ${errs.map((e) => `line ${e.lineNum}: ${e.message}`).join('\n')}`);
     return m;
   };
-  const [terrainMod, skyMod, normalsMod, shadeMod] = await Promise.all([
+  const [terrainMod, skyMod, normalsMod, shadeMod, buildMod] = await Promise.all([
     module('terrain', terrainWGSL), module('sky', skyWGSL), module('normals', normalsWGSL), module('shade', shadeWGSL),
+    module('buildings', buildingsWGSL),
   ]);
+
+  // ---------------------------------------------------------------- OSM buffers
+  const storage = (data) => {
+    const b = device.createBuffer({ size: Math.max(16, Math.ceil(data.byteLength / 4) * 4), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(b, 0, data);
+    return b;
+  };
+  const segBuf = storage(osm.segs), attrBuf = storage(osm.attr), gridBuf = storage(osm.grid);
+  const meshBuf = device.createBuffer({ size: Math.max(40, osm.mesh.byteLength), usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(meshBuf, 0, osm.mesh);
+  const meshVerts = osm.mesh.length / 10;
 
   // ---------------------------------------------------------------- precompute (startup)
   const runCompute = async (mod, entryPoint, layout, target) => {
@@ -120,7 +144,7 @@ export async function createRenderer(canvas, { heights, water }, opts) {
   // ---------------------------------------------------------------- render pipelines
   const depthStencil = { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'greater' };
   const multisample = { count: SAMPLES };
-  const [terrainPipe, skyPipe] = await Promise.all([
+  const [terrainPipe, skyPipe, buildPipe] = await Promise.all([
     device.createRenderPipelineAsync({
       layout: device.createPipelineLayout({ bindGroupLayouts: [terrainLayout] }),
       vertex: { module: terrainMod, entryPoint: 'vsTerrain' },
@@ -136,6 +160,18 @@ export async function createRenderer(canvas, { heights, water }, opts) {
       depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'greater-equal' },
       multisample,
     }),
+    device.createRenderPipelineAsync({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [buildLayout] }),
+      vertex: { module: buildMod, entryPoint: 'vsBuild', buffers: [{ arrayStride: 40, attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x3' },
+        { shaderLocation: 1, offset: 12, format: 'float32x3' },
+        { shaderLocation: 2, offset: 24, format: 'float32x2' },
+        { shaderLocation: 3, offset: 32, format: 'float32x2' },
+      ] }] },
+      fragment: { module: buildMod, entryPoint: 'fsBuild', targets: [{ format }] },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil, multisample,
+    }),
   ]);
   const terrainBG = device.createBindGroup({ layout: terrainLayout, entries: [
     { binding: 0, resource: { buffer: frameBuf } },
@@ -145,6 +181,15 @@ export async function createRenderer(canvas, { heights, water }, opts) {
     { binding: 4, resource: shadeTex.createView() },
     { binding: 5, resource: waterTex.createView() },
     { binding: 6, resource: linSamp },
+    { binding: 7, resource: { buffer: segBuf } },
+    { binding: 8, resource: { buffer: attrBuf } },
+    { binding: 9, resource: { buffer: gridBuf } },
+  ] });
+  const buildBG = device.createBindGroup({ layout: buildLayout, entries: [
+    { binding: 0, resource: { buffer: frameBuf } },
+    { binding: 1, resource: heightTex.createView() },
+    { binding: 2, resource: shadeTex.createView() },
+    { binding: 3, resource: linSamp },
   ] });
   const skyBG = device.createBindGroup({ layout: skyLayout, entries: [{ binding: 0, resource: { buffer: frameBuf } }] });
 
@@ -235,6 +280,12 @@ export async function createRenderer(canvas, { heights, water }, opts) {
     pass.setIndexBuffer(indexBuf, 'uint16');
     const nl = opts.debugLevels ?? LEVELS;
     for (let l = 0; l < nl; l++) pass.drawIndexed(levelCount[l], 1, levelFirst[l], 0, l);
+    if (meshVerts > 0) {
+      pass.setPipeline(buildPipe);
+      pass.setBindGroup(0, buildBG);
+      pass.setVertexBuffer(0, meshBuf);
+      pass.draw(meshVerts);
+    }
     pass.setPipeline(skyPipe);
     pass.setBindGroup(0, skyBG);
     pass.draw(3);
