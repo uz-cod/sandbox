@@ -11,7 +11,7 @@
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
   .panel { position: fixed; background: var(--bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 10px 12px; }
-  #ui { top: 16px; left: 16px; width: 270px; }
+  #ui { top: 16px; left: 16px; width: 320px; max-height: calc(100vh - 110px); overflow-y: auto; }
   #ui h1 { font-size: 14px; margin: 0 0 8px; font-weight: 600; letter-spacing: .02em; }
   #peaks { display: flex; flex-direction: column; gap: 2px; }
   #peaks button { all: unset; cursor: pointer; display: grid; grid-template-columns: 20px 1fr auto; gap: 8px;
@@ -22,11 +22,30 @@
     border: 1px solid rgba(255,255,255,.18); border-radius: 4px; padding: 0 3px; }
   #peaks .e, #trails .e { color: var(--dim); font-variant-numeric: tabular-nums; }
   #trailsHead { margin: 10px 0 4px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.1); font-size: 12px; color: var(--dim); }
-  #trails { display: flex; flex-direction: column; gap: 1px; max-height: 34vh; overflow-y: auto; }
-  #trails button { all: unset; cursor: pointer; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center;
-    padding: 4px 6px; border-radius: 6px; font-size: 12px; }
-  #trails button:hover { background: rgba(255,255,255,.08); }
-  #trails .r { font: 600 11px ui-monospace, monospace; color: #1b1b1b; background: #f2f2f2; border-radius: 3px; padding: 0 4px;
+  #trails { display: flex; flex-direction: column; gap: 1px; }
+  #trailsHead .dim { color: var(--dim); }
+  #trailsHead button, #trails .it button { all: unset; cursor: pointer; font-size: 11px; color: var(--acc);
+    border: 1px solid rgba(255,210,122,.35); border-radius: 4px; padding: 0 5px; line-height: 16px; }
+  #trailsHead button { float: right; }
+  #trailsHead button:hover, #trails .it button:hover { background: rgba(255,210,122,.15); }
+  #trails .th { padding: 3px 0 5px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  #trails .thName { all: unset; cursor: pointer; display: grid; grid-template-columns: 12px 1fr auto; gap: 7px; align-items: center;
+    width: calc(100% - 12px); padding: 3px 6px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }
+  #trails .thName:hover { background: rgba(255,255,255,.08); }
+  #trails .pin { width: 9px; height: 9px; border-radius: 50%; background: #ff7319; box-shadow: 0 0 0 2px #fff; }
+  #trails .junction .thName { font-weight: 400; color: var(--dim); }
+  #trails .junction .pin { background: #b3b3b3; }
+  #trails .it { display: grid; grid-template-columns: auto auto 1fr auto auto; gap: 6px; align-items: center;
+    padding: 2px 6px 2px 25px; font-size: 11.5px; }
+  #trails .d { font: 600 10px ui-monospace, monospace; padding: 0 4px; border-radius: 3px; color: #111; line-height: 15px; }
+  #trails .dT { background: #4dcc66; } #trails .dE { background: #ffb826; } #trails .dEE { background: #f24533; color: #fff; }
+  #trails .dEEA { background: #b366ff; color: #fff; } #trails .dx { background: #bfbfbf; }
+  #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .lbl { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 11.5px; font-weight: 600; color: #fff;
+    background: rgba(20,20,20,.62); padding: 1px 6px; border-radius: 4px; text-shadow: 0 1px 1px #000; }
+  .lbl span { font-weight: 400; color: rgba(255,255,255,.75); }
+  body.nohud #labels { display: none; }
+  #trails .r { font: 600 10.5px ui-monospace, monospace; color: #1b1b1b; background: #f2f2f2; border-radius: 3px; padding: 0 4px;
     box-shadow: inset 0 3px 0 #d9342b, inset 0 -3px 0 #d9342b; line-height: 17px; min-width: 22px; text-align: center; }
   #trails .n { color: var(--fg); line-height: 1.25; }
   #follow { display: none; bottom: 16px; left: 50%; transform: translateX(-50%); text-align: center; min-width: 320px; }
@@ -51,6 +70,7 @@
 </head>
 <body>
 <canvas id="gpu" tabindex="0"></canvas>
+<div id="labels"></div>
 <div id="status">Caricamento…</div>
 <div id="ui" class="panel">
   <h1>Montagne di Lecco</h1>
@@ -70,7 +90,7 @@
 </div>
 <div id="help" class="panel">
   <kbd>Click</kbd> cattura mouse (<kbd>Esc</kbd> rilascia) · <kbd>W A S D</kbd> muovi · <kbd>E</kbd>/<kbd>Q</kbd> su/giù ·
-  <kbd>Shift</kbd> veloce · <kbd>Alt</kbd> lento · rotella: velocità · <kbd>1–8</kbd> vette · <kbd>H</kbd> nascondi interfaccia
+  <kbd>Shift</kbd> veloce · <kbd>Alt</kbd> lento · rotella: velocità · <kbd>1–8</kbd> vette · <kbd>V</kbd> vista d'insieme · <kbd>H</kbd> nascondi interfaccia
 </div>
 <div id="credits"></div>
 <!--APP-->

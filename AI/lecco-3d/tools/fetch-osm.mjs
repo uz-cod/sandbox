@@ -44,6 +44,8 @@ function extract(osm) {
       ways.push({ id: e.id, tags, c: e.geometry.flatMap((g) => [r6(g.lat), r6(g.lon)]) });
     } else if (e.type === 'relation' && t.route === 'hiking') {
       routes.push({ id: e.id, ref: t.ref || '', name: t.name || '', osmc: t['osmc:symbol'] || '', operator: t.operator || '',
+        from: t.from || '', to: t.to || '', via: t.via || '', cai: t.cai_scale || '',
+        durF: t['duration:forward'] || t.duration || '', durB: t['duration:backward'] || '', roundtrip: t.roundtrip === 'yes',
         ways: e.members.filter((m) => m.type === 'way').map((m) => m.ref) });
     } else if (t.tourism === 'alpine_hut' || t.tourism === 'wilderness_hut' || t.amenity === 'shelter' || /^(rifugio|bivacco|capanna)\b/i.test(t.name || '')) {
       if (t.amenity === 'shelter' && /picnic|public_transport|field_shelter|sun_shelter|pavilion/.test(t.shelter_type || '')) continue;

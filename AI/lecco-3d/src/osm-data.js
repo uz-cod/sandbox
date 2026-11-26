@@ -16,6 +16,11 @@ const PAD_FLAG = 0x80000000;
 // half widths (m) by class: path, footway, track, steps, bridleway, via_ferrata (not painted)
 const HALF_WIDTH = [0.45, 0.7, 1.35, 0.7, 0.75, 0];
 const BORDER = 1.6;                   // worn-grass band beyond the trail edge (m)
+const HL_MARGIN = 40;                 // highlighted itineraries are drawn a few pixels wide, even far away
+export const HL_FLAG = 1 << 8;
+export const DIFFS = ['', 'T', 'E', 'EE', 'EEA'];
+export const DIFF_COLORS = [[0.75, 0.75, 0.75], [0.30, 0.80, 0.40], [1.0, 0.72, 0.15], [0.95, 0.27, 0.20], [0.70, 0.40, 1.0]];
+import { PEAKS } from './peaks.js';
 
 export async function loadOsm() {
   const stream = new Blob([osmBlob]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
@@ -39,6 +44,9 @@ export async function loadOsm() {
   let nSeg = 0;
   for (let w = 0; w < nW; w++) if (HALF_WIDTH[cls[w]] > 0) nSeg += counts[w] - 1;
   const huts = osmMeta.huts, crosses = osmMeta.crosses;
+  const its = osmMeta.itineraries;
+  const nTrailSeg = nSeg;
+  for (const it of its) nSeg += Math.abs(it.end - it.start);
   const nPads = huts.length + crosses.length;
   const segs = new Float32Array((nSeg + 2 * nPads) * 4);
   const attr = new Uint32Array(Math.max(1, nSeg));
@@ -61,6 +69,19 @@ export async function loadOsm() {
       }
     }
     p += n;
+  }
+  // itinerary segments: flagged, carry difficulty and the bit of their summit
+  const peakBit = (id) => 1 << Math.max(0, PEAKS.findIndex((pk) => pk.id === id));
+  for (const it of its) {
+    const dir = it.end > it.start ? 1 : -1;
+    const d = Math.max(0, DIFFS.indexOf(it.diff));
+    for (let i = it.start; i !== it.end; i += dir) {
+      const a = i, b = i + dir;
+      segs.set([routePts[2 * a], routePts[2 * a + 1], routePts[2 * b], routePts[2 * b + 1]], s * 4);
+      attr[s] = HL_FLAG | (d << 9) | (peakBit(it.peak) << 16);
+      half[s] = HL_MARGIN - BORDER - 0.5;
+      s++;
+    }
   }
 
   // ---------------------------------------------------------------- pads (huts, crosses)
@@ -116,66 +137,51 @@ export async function loadOsm() {
   // ---------------------------------------------------------------- building mesh
   const mesh = buildMesh(huts, crosses);
 
-  // ---------------------------------------------------------------- trail options per summit
-  const routeOptions = buildRouteOptions(routePts);
+  // ---------------------------------------------------------------- itineraries / trailheads per summit
+  const ths = osmMeta.trailheads.map((t) => ({ ...t, y: groundHeightCubic(t.x, t.z), its: [] }));
+  for (const it of its) {
+    it.stops = stopsFor(it, routePts);
+    it.h0 = groundHeightCubic(routePts[2 * it.start], routePts[2 * it.start + 1]);
+    it.h1 = groundHeightCubic(routePts[2 * it.end], routePts[2 * it.end + 1]);
+    ths[it.th].its.push(it);
+  }
+  const byPeak = new Map();
+  for (const t of ths) {
+    t.its.sort((a, b) => (a.ref || 'zzz').localeCompare(b.ref || 'zzz', 'it', { numeric: true }));
+    if (!byPeak.has(t.peak)) byPeak.set(t.peak, []);
+    byPeak.get(t.peak).push(t);
+  }
+  for (const list of byPeak.values()) list.sort((a, b) => a.connector - b.connector || a.ele - b.ele);
+  // trailhead pins: x, y, z, summit bit | r, g, b, kind (0 trailhead, 1 junction)
+  const pins = new Float32Array(ths.length * 8);
+  ths.forEach((t, k) => pins.set([t.x, t.y, t.z, peakBit(t.peak), ...(t.connector ? [0.7, 0.7, 0.7] : [1.0, 0.45, 0.1]), t.connector ? 1 : 0], k * 8));
 
   return {
-    segs, attr, grid, gridInfo: [gx0, gz0, GRID_CELL, dim], nSeg, nPads, maxPerCell,
-    mesh, routePts, routeOptions,
+    segs, attr, grid, gridInfo: [gx0, gz0, GRID_CELL, dim], nSeg, nTrailSeg, nPads, maxPerCell,
+    mesh, routePts, trailheads: ths, byPeak, pins, peakBit,
   };
 }
 
 // ------------------------------------------------------------------ routes
-function bearingName(dx, dz) {
-  const a = (Math.atan2(dx, -dz) * 180) / Math.PI;
-  const names = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
-  return names[(Math.round(((a + 360) % 360) / 45)) % 8];
+// huts passed between it.start and it.end, with distance from it.start
+function stopsFor(it, routePts) {
+  const r = osmMeta.routes[it.route];
+  const dir = it.end > it.start ? 1 : -1;
+  const out = [];
+  for (const st of r.stops || []) {
+    const si = r.offset + st.index;
+    if ((si - it.start) * dir <= 0 || (it.end - si) * dir < 0) continue;
+    let along = 0;
+    for (let i = it.start; i !== si; i += dir) along += Math.hypot(routePts[2 * (i + dir)] - routePts[2 * i], routePts[2 * (i + dir) + 1] - routePts[2 * i + 1]);
+    out.push({ name: st.name, along });
+  }
+  return out.sort((a, b) => a.along - b.along);
 }
 
-function buildRouteOptions(routePts) {
-  const byPeak = new Map();
-  for (const r of osmMeta.routes) {
-    for (const t of r.touches) {
-      for (const dir of [1, -1]) {
-        const startI = r.offset + t.index;
-        const endI = dir > 0 ? r.offset + r.count - 1 : r.offset;
-        const steps = Math.abs(endI - startI);
-        if (steps < 3) continue;
-        let len = 0;
-        for (let i = startI; i !== endI; i += dir) len += Math.hypot(routePts[2 * (i + dir)] - routePts[2 * i], routePts[2 * (i + dir) + 1] - routePts[2 * i + 1]);
-        if (len < 250) continue;
-        const sx = routePts[2 * startI], sz = routePts[2 * startI + 1], ex = routePts[2 * endI], ez = routePts[2 * endI + 1];
-        const h0 = groundHeightCubic(sx, sz), h1 = groundHeightCubic(ex, ez);
-        if (h0 - h1 < 80) continue;               // "from the summit down"
-        // huts passed on the way down, with distance from the start
-        const stops = [];
-        for (const st of r.stops || []) {
-          const si = r.offset + st.index;
-          if ((si - startI) * dir <= 0) continue;
-          let along = 0;
-          for (let i = startI; i !== si; i += dir) along += Math.hypot(routePts[2 * (i + dir)] - routePts[2 * i], routePts[2 * (i + dir) + 1] - routePts[2 * i + 1]);
-          stops.push({ name: st.name, along });
-        }
-        stops.sort((a, b) => a.along - b.along);
-        const opt = {
-          key: `${r.id}:${t.index}:${dir}`, ref: r.ref, name: r.name, osmc: r.osmc,
-          start: startI, end: endI, dir, length: len, h0, h1, toward: bearingName(ex - sx, ez - sz), stops,
-        };
-        if (!byPeak.has(t.peak)) byPeak.set(t.peak, []);
-        byPeak.get(t.peak).push(opt);
-      }
-    }
-  }
-  for (const list of byPeak.values()) {
-    list.sort((a, b) => (a.ref || 'zzz').localeCompare(b.ref || 'zzz', 'it', { numeric: true }) || b.h0 - b.h1 - (a.h0 - a.h1));
-    // drop near-duplicates (same ref, same end point within 50 m)
-    for (let i = list.length - 1; i > 0; i--) {
-      for (let j = 0; j < i; j++) {
-        if (list[i].ref === list[j].ref && Math.abs(list[i].h1 - list[j].h1) < 15 && Math.abs(list[i].length - list[j].length) < 150) { list.splice(i, 1); break; }
-      }
-    }
-  }
-  return byPeak;
+// Same itinerary walked the other way (summit -> trailhead).
+export function reversed(it) {
+  const total = it.length;
+  return { ...it, start: it.end, end: it.start, h0: it.h1, h1: it.h0, stops: it.stops.map((s) => ({ name: s.name, along: total - s.along })).reverse() };
 }
 
 // ------------------------------------------------------------------ procedural buildings

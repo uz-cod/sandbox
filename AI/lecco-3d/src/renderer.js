@@ -5,6 +5,7 @@ import skyWGSL from './shaders/sky.wgsl';
 import normalsWGSL from './shaders/precompute-normals.wgsl';
 import shadeWGSL from './shaders/precompute-shade.wgsl';
 import buildingsWGSL from './shaders/buildings.wgsl';
+import pinsWGSL from './shaders/pins.wgsl';
 import { meta } from './terrain-data.js';
 import { perspectiveReverseZ, viewFromYawPitch, multiply, invert } from './math.js';
 
@@ -101,9 +102,9 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
     if (errs.length) throw new Error(`${label}: ${errs.map((e) => `line ${e.lineNum}: ${e.message}`).join('\n')}`);
     return m;
   };
-  const [terrainMod, skyMod, normalsMod, shadeMod, buildMod] = await Promise.all([
+  const [terrainMod, skyMod, normalsMod, shadeMod, buildMod, pinMod] = await Promise.all([
     module('terrain', terrainWGSL), module('sky', skyWGSL), module('normals', normalsWGSL), module('shade', shadeWGSL),
-    module('buildings', buildingsWGSL),
+    module('buildings', buildingsWGSL), module('pins', pinsWGSL),
   ]);
 
   // ---------------------------------------------------------------- OSM buffers
@@ -116,6 +117,9 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   const meshBuf = device.createBuffer({ size: Math.max(40, osm.mesh.byteLength), usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(meshBuf, 0, osm.mesh);
   const meshVerts = osm.mesh.length / 10;
+  const pinBuf = device.createBuffer({ size: Math.max(32, osm.pins.byteLength), usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(pinBuf, 0, osm.pins);
+  const pinCount = osm.pins.length / 8;
 
   // ---------------------------------------------------------------- precompute (startup)
   const runCompute = async (mod, entryPoint, layout, target) => {
@@ -144,7 +148,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   // ---------------------------------------------------------------- render pipelines
   const depthStencil = { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'greater' };
   const multisample = { count: SAMPLES };
-  const [terrainPipe, skyPipe, buildPipe] = await Promise.all([
+  const [terrainPipe, skyPipe, buildPipe, pinPipe] = await Promise.all([
     device.createRenderPipelineAsync({
       layout: device.createPipelineLayout({ bindGroupLayouts: [terrainLayout] }),
       vertex: { module: terrainMod, entryPoint: 'vsTerrain' },
@@ -171,6 +175,16 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       fragment: { module: buildMod, entryPoint: 'fsBuild', targets: [{ format }] },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil, multisample,
+    }),
+    device.createRenderPipelineAsync({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [skyLayout] }),
+      vertex: { module: pinMod, entryPoint: 'vsPin', buffers: [{ arrayStride: 32, stepMode: 'instance', attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x4' },
+        { shaderLocation: 1, offset: 16, format: 'float32x4' },
+      ] }] },
+      fragment: { module: pinMod, entryPoint: 'fsPin', targets: [{ format }] },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil, multisample: { count: SAMPLES, alphaToCoverageEnabled: false },
     }),
   ]);
   const terrainBG = device.createBindGroup({ layout: terrainLayout, entries: [
@@ -286,6 +300,12 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       pass.setVertexBuffer(0, meshBuf);
       pass.draw(meshVerts);
     }
+    if (pinCount > 0 && frame[U_MISC + 3] > 0) {
+      pass.setPipeline(pinPipe);
+      pass.setBindGroup(0, skyBG);
+      pass.setVertexBuffer(0, pinBuf);
+      pass.draw(6, pinCount);
+    }
     pass.setPipeline(skyPipe);
     pass.setBindGroup(0, skyBG);
     pass.draw(3);
@@ -317,5 +337,8 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
     return new ImageData(out, w, h);
   }
 
-  return { device, resize, render, capture, precomputeMs, adapterInfo: adapter.info };
+  // selected summit bit mask: highlights its itineraries and shows its trailhead pins
+  function setSelection(mask) { frame[U_MISC + 3] = mask; }
+
+  return { device, resize, render, capture, setSelection, viewProj: vp, precomputeMs, adapterInfo: adapter.info };
 }

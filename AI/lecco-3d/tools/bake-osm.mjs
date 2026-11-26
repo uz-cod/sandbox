@@ -120,6 +120,8 @@ export function bakeOsm({ quiet = false } = {}) {
   for (const r of ex.routes) {
     const pieces = r.ways.map((id) => wayGeom.get(id)).filter(Boolean).map((p) => p.slice());
     if (!pieces.length) continue;
+    const first = pieces[0];
+    const f0 = [first[0], first[1]], f1 = [first[first.length - 2], first[first.length - 1]];
     const used = new Uint8Array(pieces.length);
     const chains = [];
     const near = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz) < 3;
@@ -145,6 +147,8 @@ export function bakeOsm({ quiet = false } = {}) {
       chains.push(chain);
     }
     for (const chain of chains) {
+      const dEnd = (x, z) => Math.min(Math.hypot(x - f0[0], z - f0[1]), Math.hypot(x - f1[0], z - f1[1]));
+      const fromAtStart = dEnd(chain[0], chain[1]) <= dEnd(chain[chain.length - 2], chain[chain.length - 1]);
       const s = simplify(chain, 0.5);
       let len = 0;
       for (let i = 2; i < s.length; i += 2) len += Math.hypot(s[i] - s[i - 2], s[i + 1] - s[i - 1]);
@@ -159,7 +163,8 @@ export function bakeOsm({ quiet = false } = {}) {
         if (best < 400) touches.push({ peak: sm.id, index: bi, dist: Math.round(best) });
       }
       if (!touches.length) continue;
-      routes.push({ id: r.id, ref: r.ref, name: r.name, osmc: r.osmc, operator: r.operator, offset: routePts.length / 2, count: s.length / 2, length: Math.round(len), touches });
+      routes.push({ id: r.id, ref: r.ref, name: r.name, osmc: r.osmc, operator: r.operator, offset: routePts.length / 2, count: s.length / 2, length: Math.round(len), touches,
+        from: r.from, to: r.to, cai: r.cai, durF: r.durF, durB: r.durB, fromAtStart, wayIds: r.ways });
       routePts.push(...s);
     }
   }
@@ -205,6 +210,75 @@ export function bakeOsm({ quiet = false } = {}) {
     }
   }
 
+  // --- itineraries to each summit: from the far end of every route (trailhead) up to the summit
+  const sacOf = new Map(ex.ways.map((w) => [w.id, SAC[w.tags.sac_scale] || 0]));
+  const demBil = (x, z) => {
+    const lat = CROP.lat - z / -toXZ(CROP.lat + 1, CROP.lon)[1], lon = CROP.lon + x / toXZ(CROP.lat, CROP.lon + 1)[0];
+    const px = (lon - dem.lon0) / dem.dLon, py = (dem.lat0 - lat) / dem.dLat;
+    const ix = Math.floor(px), iy = Math.floor(py), fx = px - ix, fy = py - iy, W = dem.width, D = dem.data;
+    const s = iy * W + ix;
+    return (D[s] * (1 - fx) + D[s + 1] * fx) * (1 - fy) + (D[s + W] * (1 - fx) + D[s + W + 1] * fx) * fy;
+  };
+  const parseDur = (d) => {
+    const m = /^(\d{1,2})[:.h](\d{1,2})/.exec(d || '');
+    return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+  };
+  const normCai = (c) => (/^(EEA|EE|E|T)/.exec((c || '').toUpperCase().replace(/[^A-Z]/g, '')) || [''])[0];
+  const named = [...huts.map((h) => ({ name: h.name, x: h.x, z: h.z })), ...ex.peaks.map((p) => { const [x, z] = toXZ(p.lat / 1e6, p.lon / 1e6); return { name: p.name, x, z }; })].filter((n) => n.name);
+  const itineraries = [];
+  routes.forEach((r, ri) => {
+    const maxSac = Math.max(0, ...r.wayIds.map((id) => sacOf.get(id) || 0));
+    const diff = normCai(r.cai) || ['', 'T', 'E', 'EE', 'EEA', 'EEA', 'EEA'][maxSac] || '';
+    for (const t of r.touches) {
+      if (t.dist > 250) continue;
+      for (const end of [0, r.count - 1]) {
+        const step = end < t.index ? 1 : -1;
+        let len = 0, dplus = 0, lastH = demBil(routePts[2 * (r.offset + end)], routePts[2 * (r.offset + end) + 1]), acc = 0;
+        for (let i = end; i !== t.index; i += step) {
+          const a = 2 * (r.offset + i), b2 = 2 * (r.offset + i + step);
+          const seg = Math.hypot(routePts[b2] - routePts[a], routePts[b2 + 1] - routePts[a + 1]);
+          len += seg; acc += seg;
+          if (acc >= 25 || i + step === t.index) {           // sample every ~25 m against DEM noise
+            const h = demBil(routePts[b2], routePts[b2 + 1]);
+            if (h > lastH) dplus += h - lastH;
+            lastH = h; acc = 0;
+          }
+        }
+        const sx = routePts[2 * (r.offset + end)], sz = routePts[2 * (r.offset + end) + 1];
+        const h0 = demBil(sx, sz), h1 = demBil(routePts[2 * (r.offset + t.index)], routePts[2 * (r.offset + t.index) + 1]);
+        if (len < 300 || h1 - h0 < 120 || !inCrop(sx, sz, -150)) continue;   // trailhead must be inside the scene
+        const fromEnd = (end === 0) === r.fromAtStart;
+        const est = (() => { const h = len / 4000, v = dplus / 400; return Math.round((Math.max(h, v) + Math.min(h, v) / 2) * 60); })();
+        const fullDur = Math.max(parseDur(r.durF), parseDur(r.durB));
+        const fragment = fullDur > est * 3 + 30;           // only a piece of a much longer route lies in the scene
+        if (fragment) continue;                            // the cut end of a route piece is not a real trailhead
+        let name = (fragment ? '' : (fromEnd ? r.from : r.to)) || '';
+        if (!name) {
+          let best = 400, bn = '';
+          for (const nm of named) { const d = Math.hypot(nm.x - sx, nm.z - sz); if (d < best) { best = d; bn = nm.name; } }
+          name = bn || `quota ${Math.round(h0)} m`;
+        }
+        const connector = /^(innesto|incrocio|bivio|sentiero\s|percorso\s)/i.test(name);
+        // time: OSM duration in the ascent direction, else CAI-style estimate (4 km/h, 400 m/h)
+        let minutes = fragment ? 0 : parseDur(fromEnd ? r.durF : r.durB);
+        const timeSrc = minutes ? 'osm' : 'stima';
+        if (!minutes || minutes < est * 0.4 || minutes > est * 3) minutes = est;
+        itineraries.push({ route: ri, peak: t.peak, ref: r.ref, name: r.name, start: r.offset + end, end: r.offset + t.index,
+          trailhead: name, connector, diff, length: Math.round(len), dplus: Math.round(dplus), minutes, timeSrc, x: sx, z: sz, ele: Math.round(h0) });
+      }
+    }
+  });
+  // trailheads: same peak, same name (or within 80 m) -> one marker
+  const trailheads = [];
+  for (const it of itineraries) {
+    let th = trailheads.find((t) => t.peak === it.peak && ((t.name === it.trailhead && Math.hypot(t.x - it.x, t.z - it.z) < 400) || Math.hypot(t.x - it.x, t.z - it.z) < 80));
+    if (!th) { th = { id: trailheads.length, peak: it.peak, name: it.trailhead, x: +it.x.toFixed(1), z: +it.z.toFixed(1), ele: it.ele, connector: it.connector }; trailheads.push(th); }
+    th.connector = th.connector && it.connector;
+    it.th = th.id;
+    delete it.x; delete it.z;
+  }
+  for (const r of routes) delete r.wayIds;
+
   // --- crosses >= 600 m
   const crosses = [];
   for (const c of ex.crosses) {
@@ -230,7 +304,7 @@ export function bakeOsm({ quiet = false } = {}) {
 
   const meta = {
     quant: { origin: Q0, scale: QS }, ways: nW, trailPoints: nT, routePoints: nR, classes: CLASSES,
-    routes, huts, crosses, timestamp: ex.timestamp,
+    routes, huts, crosses, itineraries, trailheads, timestamp: ex.timestamp,
     attribution: 'Sentieri, rifugi e croci © OpenStreetMap contributors (ODbL)',
   };
   mkdirSync(OUT_DIR, { recursive: true });
@@ -240,6 +314,10 @@ export function bakeOsm({ quiet = false } = {}) {
   for (const r of routes) for (const t of r.touches) (byPeak[t.peak] ||= []).push(r.ref || r.name);
   log(`trails: ${nW} ways, ${rawPts} -> ${nT} points; routes at summits: ${routes.length} (${nR} points)`);
   for (const p of PEAKS) log(`  ${p.name.padEnd(24)} ${(byPeak[p.id] || []).join(', ') || '-'}`);
+  for (const p of PEAKS) {
+    const its = itineraries.filter((i) => i.peak === p.id);
+    log(`  ↑ ${p.name.padEnd(22)} ${its.length} itinerari, partenze: ${[...new Set(its.filter((i) => !i.connector).map((i) => i.trailhead))].join(' · ') || '-'}`);
+  }
   log(`huts/bivouacs >= ${MIN_HUT_ELE} m: ${huts.length} (${huts.filter((h) => h.type === 'bivouac').length} bivouacs, ${huts.filter((h) => h.fromPoly).length} with footprint); crosses: ${crosses.length}`);
   log(`osm.bin ${(bin.length / 1024).toFixed(0)} KB`);
   return meta;

@@ -21,11 +21,12 @@ struct Level {
 @group(0) @binding(8) var<storage, read> segAttr: array<u32>;
 @group(0) @binding(9) var<storage, read> cells: array<u32>;
 
-struct Feat { edge: f32, center: f32, halfW: f32, attr: u32, padW: f32, padH: f32 };
+struct Feat { edge: f32, center: f32, halfW: f32, attr: u32, padW: f32, padH: f32, hlD: f32, hlAttr: u32 };
 
 fn features(xz: vec2f, wantTrails: bool) -> Feat {
   var f: Feat;
-  f.edge = 1e9; f.center = 1e9; f.halfW = 0.0; f.attr = 0u; f.padW = 0.0; f.padH = 0.0;
+  f.edge = 1e9; f.center = 1e9; f.halfW = 0.0; f.attr = 0u; f.padW = 0.0; f.padH = 0.0; f.hlD = 1e9; f.hlAttr = 0u;
+  let sel = u32(F.misc.w);
   let g = (xz - F.grid.xy) / F.grid.z;
   let n = F.grid.w;
   if (g.x < 0.0 || g.y < 0.0 || g.x >= n || g.y >= n) { return f; }
@@ -45,15 +46,21 @@ fn features(xz: vec2f, wantTrails: bool) -> Feat {
       let w = 1.0 - smoothstep(0.0, p1.w, outside);
       if (w > f.padW) { f.padW = w; f.padH = p1.z; }
     } else if (wantTrails) {
+      let at = segAttr[it];
+      let isHL = (at & 256u) != 0u;
+      if (isHL && ((at >> 16u) & sel) == 0u) { continue; }   // itinerary of a summit not selected
       let s = segs[it];
       let pa = xz - s.xy;
       let ba = s.zw - s.xy;
       let h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
       let dc = length(pa - ba * h);
-      let at = segAttr[it];
-      let hw = f32(at >> 16u) * 0.001;
-      let e = dc - hw;
-      if (e < f.edge) { f.edge = e; f.center = dc; f.halfW = hw; f.attr = at; }
+      if (isHL) {
+        if (dc < f.hlD) { f.hlD = dc; f.hlAttr = at; }
+      } else {
+        let hw = f32(at >> 16u) * 0.001;
+        let e = dc - hw;
+        if (e < f.edge) { f.edge = e; f.center = dc; f.halfW = hw; f.attr = at; }
+      }
     }
   }
   return f;
@@ -250,13 +257,34 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4f {
 
   let surf = material(p, nBase, n, curv, rd.x, dist);
   var albedo = surf.albedo;
-  if (dist < 6000.0 && water < 0.5) {
+  var hlCol = vec3f(0.0);
+  var hlA = 0.0;
+  let pfx = dist * 1.155 * F.screen.w;                 // pixel footprint (m)
+  let featRange = select(6000.0, 22000.0, F.misc.w > 0.5);
+  if (dist < featRange && water < 0.5) {
     let ft = features(p.xz, true);
+    if (ft.hlD < 1e8) {
+      // selected summit's itineraries: ~3 px wide line with a dark outline, coloured by difficulty
+      let core = clamp(pfx * 1.4, 0.7, 30.0);
+      let outl = core + clamp(pfx * 1.0, 0.25, 12.0);
+      let aa = pfx * 0.6;
+      let d = (ft.hlAttr >> 9u) & 7u;
+      var c = vec3f(0.75);
+      if (d == 1u) { c = vec3f(0.30, 0.80, 0.40); }
+      if (d == 2u) { c = vec3f(1.0, 0.72, 0.15); }
+      if (d == 3u) { c = vec3f(0.95, 0.27, 0.20); }
+      if (d == 4u) { c = vec3f(0.70, 0.40, 1.0); }
+      let inCore = 1.0 - smoothstep(core - aa, core + aa, ft.hlD);
+      let inOut = 1.0 - smoothstep(outl - aa, outl + aa, ft.hlD);
+      hlCol = mix(vec3f(0.02, 0.02, 0.02), c, inCore / max(inOut, 1e-3));
+      hlA = inOut * 0.92 * smoothstep(30.0, 140.0, dist);   // near the eye the real trail shows
+    }
+    if (dist < 6000.0) {
     if (ft.padW > 0.0) {
       n = normalize(mix(n, vec3f(0.0, 1.0, 0.0), ft.padW));
       albedo = mix(albedo, vec3f(0.24, 0.22, 0.19) * (0.85 + 0.3 * noise(p.xz / 0.8)), smoothstep(0.6, 1.0, ft.padW) * 0.7 * (1.0 - surf.snow));
     }
-    let pf = dist * 1.155 * F.screen.w;              // pixel footprint (m)
+    let pf = pfx;
     if (ft.edge < 1.6 + pf) {
       let hw = ft.halfW;
       let hwe = max(hw, pf * 0.55);                    // keep sub-pixel trails visible, energy-preserving
@@ -283,6 +311,7 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4f {
       albedo = mix(albedo, albedo * vec3f(0.92, 0.85, 0.74), border * 0.55 * keep);
       albedo = mix(albedo, pc, m * keep);
       n = normalize(mix(n, nBase, m * 0.8));
+    }
     }
   }
   let ndl = max(dot(n, Ls), 0.0);
@@ -317,5 +346,10 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4f {
 
   if (F.misc.z > 0.5) { col = surf.dbg * (0.3 + 0.7 * ndl); }
   col = applyFog(col, p);
+  if (hlA > 0.0) {
+    // itinerary overlay: lit softly, only partly fogged so it reads from far away
+    let lit = hlCol * (1.1 + 0.9 * ndl * sunVis);
+    col = mix(col, mix(lit, applyFog(lit, p), 0.35), hlA);
+  }
   return tonemap(col, in.pos.xy);
 }

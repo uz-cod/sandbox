@@ -17,7 +17,9 @@ No server needed.
 | Shift / Alt | faster / slower · mouse wheel: speed multiplier |
 | ← → ↑ ↓ | turn |
 | 1–8 | jump to a summit |
-| click a trail under the summit list | walk down that marked route at eye height |
+| select a summit | its marked itineraries light up (colour = CAI difficulty T/E/EE/EEA) with trailhead pins |
+| panel: trailhead name · `sali` · `scendi` | fly to the trailhead · walk up to the summit · walk down |
+| V | overview of the selected summit and all its trailheads |
 | (on a trail) Space · W/S · Shift · F | pause/resume · forward/back · run · leave the trail |
 | H | hide the interface |
 
@@ -27,8 +29,8 @@ the valley quickly from high up.
 URL parameters (debug/tuning): `peak=<n|id>`, `cam=x,y,z,yawDeg,pitchDeg`, `sunaz`, `sunel`,
 `snow` (snow line, m), `exp` (exposure), `relief` (micro-relief scale, 0 = off),
 `dbg=1` (material weights: red rock, green forest, blue snow), `scale` (render scale),
-`pre` (precompute texture size, default 2048), `follow=<trail index>:<metres>` (start on a trail of
-the selected summit).
+`pre` (precompute texture size, default 2048), `follow=<itinerary>:<metres>[:down]` (walk an
+itinerary of the selected summit), `overview`.
 
 ## Build
 
@@ -52,6 +54,12 @@ npm run shot -- "peak=2&hud=0"   # headless screenshots into shots/ (needs Playw
   polylines, kept when they pass within 400 m of a start summit; real huts/bivouacs (`alpine_hut`,
   `wilderness_hut`, shelter huts) above 600 m with an oriented footprint from the OSM building
   outline; crosses above 600 m → ~410 KB.
+- **Itineraries & trailheads**: for every marked route reaching a start summit, the far end is the
+  trailhead (named from the relation's `from`/`to`, oriented by its first member way), with CAI
+  difficulty (`cai_scale`, else derived from `sac_scale`), length, D+ (DEM every 25 m) and time
+  (OSM `duration` in the ascent direction, else 4 km/h + 400 m/h). Pieces of longer routes cut by
+  the download box are dropped. Itinerary segments carry their summit bit: the selected summit's
+  ones are drawn ~3 px wide at any distance; trailheads are distance-scaled billboard pins.
 - **Trails & buildings at runtime**: a 40 m CSR cell grid (storage buffers) lets the terrain
   vertex shader flatten building pads and smooth trail beds, and the fragment shader paint trails
   analytically (exact distance to segments, irregular worn edges, gravel up close, sub-pixel

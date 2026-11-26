@@ -64,8 +64,9 @@ const tmp = new Float64Array(2), tmp2 = new Float64Array(2);
 
 export function startFollow(routePts, opt, startDist = 0) {
   const n = Math.abs(opt.end - opt.start) + 1;
+  const dir = Math.sign(opt.end - opt.start) || 1;
   const pts = new Float32Array(n * 2), cum = new Float32Array(n);
-  for (let k = 0, i = opt.start; k < n; k++, i += opt.dir) {
+  for (let k = 0, i = opt.start; k < n; k++, i += dir) {
     pts[2 * k] = routePts[2 * i]; pts[2 * k + 1] = routePts[2 * i + 1];
     if (k > 0) cum[k] = cum[k - 1] + Math.hypot(pts[2 * k] - pts[2 * k - 2], pts[2 * k + 1] - pts[2 * k - 1]);
   }
