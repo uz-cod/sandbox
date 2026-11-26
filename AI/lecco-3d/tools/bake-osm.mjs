@@ -321,6 +321,8 @@ export function bakeOsm({ quiet = false } = {}) {
         }
         if (len < 250) continue;
         const ex = routePts[2 * (r.offset + end)], ez = routePts[2 * (r.offset + end) + 1];
+        const self = hubs.find((pl) => pl.id === pt.place);
+        if (Math.hypot(ex - self.xz[0], ez - self.xz[1]) < self.radius * 0.8) continue;   // destination inside the hub itself
         const fromEnd = (end === 0) === r.fromAtStart;
         const realEnd = fromEnd ? r.hasFirst : r.hasLast;
         let dest = realEnd ? (fromEnd ? r.from : r.to) : '';

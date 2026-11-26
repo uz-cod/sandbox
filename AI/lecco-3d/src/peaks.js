@@ -25,4 +25,6 @@ export const CROP = { lat: 45.885, lon: 9.40, extent: 25000, samples: 1024 };
 export const PLACES = [
   { id: 'versasio', name: "Versasio · funivia Piani d'Erna", short: 'Versasio (funivia)', lat: 45.86068, lon: 9.43247, radius: 160 },
   { id: 'piani-erna', name: "Piani d'Erna", short: "Piani d'Erna", lat: 45.86630, lon: 9.45017, radius: 260 },
+  { id: 'resinelli', name: 'Piani dei Resinelli', short: 'Piani dei Resinelli', lat: 45.90650, lon: 9.38900, radius: 1000 },
+  { id: 'rosalba', name: 'Rifugio Rosalba', short: 'Rifugio Rosalba', lat: 45.92228, lon: 9.37616, radius: 150 },
 ];
