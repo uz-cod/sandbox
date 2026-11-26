@@ -1,0 +1,15 @@
+{
+  "name": "lecco-3d",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time WebGPU scene of the mountains around Lecco (Italy) from Copernicus GLO-30 DEM",
+  "type": "module",
+  "scripts": {
+    "bake": "node tools/bake-dem.mjs",
+    "build": "node tools/build.mjs",
+    "shot": "node tools/shot.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
+  }
+}

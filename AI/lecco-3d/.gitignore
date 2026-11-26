@@ -1,0 +1,6 @@
+node_modules/
+src/generated/
+shots/
+# Raw Copernicus tiles: input to tools/bake-dem.mjs only, never bundled.
+# (The current tiles are already tracked; new ones need `git add -f`.)
+data/raw/

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Montagne di Lecco</title>
+<style>
+  :root { --fg: #f2f4f5; --dim: rgba(242,244,245,.62); --bg: rgba(14,18,22,.55); --acc: #ffd27a; }
+  html, body { margin: 0; height: 100%; background: #0b0e11; color: var(--fg); overflow: hidden;
+    font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+  .panel { position: fixed; background: var(--bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 10px 12px; }
+  #ui { top: 16px; left: 16px; width: 240px; }
+  #ui h1 { font-size: 14px; margin: 0 0 8px; font-weight: 600; letter-spacing: .02em; }
+  #peaks { display: flex; flex-direction: column; gap: 2px; }
+  #peaks button { all: unset; cursor: pointer; display: grid; grid-template-columns: 20px 1fr auto; gap: 8px;
+    align-items: center; padding: 5px 6px; border-radius: 6px; color: var(--fg); }
+  #peaks button:hover { background: rgba(255,255,255,.08); }
+  #peaks button.active { background: rgba(255,210,122,.16); color: var(--acc); }
+  #peaks kbd { font: 11px ui-monospace, monospace; color: var(--dim); text-align: center;
+    border: 1px solid rgba(255,255,255,.18); border-radius: 4px; padding: 0 3px; }
+  #peaks .e { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #hud { top: 16px; right: 16px; font: 12px ui-monospace, monospace; color: var(--dim); text-align: right; }
+  #hud b { color: var(--fg); font-weight: 500; }
+  #help { bottom: 16px; left: 16px; color: var(--dim); font-size: 12px; max-width: 520px; }
+  #help kbd { font: 11px ui-monospace, monospace; color: var(--fg); }
+  #credits { position: fixed; right: 10px; bottom: 6px; max-width: 60vw; text-align: right;
+    font-size: 10px; color: rgba(255,255,255,.55); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  #status { position: fixed; inset: 0; display: grid; place-items: center; font-size: 15px; color: var(--dim); }
+  #status.error { color: #ff9a8a; padding: 24px; text-align: center; }
+  body.nohud .panel { display: none; }
+  @media (max-width: 640px) {
+    #ui { width: auto; right: 16px; } #help { display: none; } #hud { top: auto; bottom: 32px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="gpu" tabindex="0"></canvas>
+<div id="status">Caricamento…</div>
+<div id="ui" class="panel">
+  <h1>Montagne di Lecco</h1>
+  <div id="peaks"></div>
+</div>
+<div id="hud" class="panel">
+  quota <b id="alt">–</b> m · suolo +<b id="agl">–</b> m<br>
+  <span id="pos">–</span><br>
+  velocità <b id="spd">–</b> · <b id="fps">–</b> fps
+</div>
+<div id="help" class="panel">
+  <kbd>Click</kbd> cattura mouse (<kbd>Esc</kbd> rilascia) · <kbd>W A S D</kbd> muovi · <kbd>E</kbd>/<kbd>Q</kbd> su/giù ·
+  <kbd>Shift</kbd> veloce · <kbd>Alt</kbd> lento · rotella: velocità · <kbd>1–8</kbd> vette · <kbd>H</kbd> nascondi interfaccia
+</div>
+<div id="credits"></div>
+<!--APP-->
+</body>
+</html>
