@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readGeoTiff } from './tiff.mjs';
 import { toXZ } from './geo.mjs';
-import { PEAKS, CROP } from '../src/peaks.js';
+import { PEAKS, PLACES, CROP } from '../src/peaks.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const EXTRACT = join(ROOT, 'data/osm/extract.json');
@@ -115,6 +115,7 @@ export function bakeOsm({ quiet = false } = {}) {
 
   // --- routes touching the summits: chain member ways into continuous polylines
   const summits = PEAKS.map((p) => ({ id: p.id, xz: toXZ(p.lat, p.lon) }));
+  const hubs = PLACES.map((p) => ({ ...p, xz: toXZ(p.lat, p.lon) }));
   const routes = [];
   const routePts = [];
   for (const r of ex.routes) {
@@ -167,9 +168,18 @@ export function bakeOsm({ quiet = false } = {}) {
         }
         if (best < 400) touches.push({ peak: sm.id, index: bi, dist: Math.round(best) });
       }
-      if (!touches.length) continue;
+      const placeTouches = [];
+      for (const pl of hubs) {
+        let best = 1e9, bi = 0;
+        for (let i = 0; i < s.length; i += 2) {
+          const d = Math.hypot(s[i] - pl.xz[0], s[i + 1] - pl.xz[1]);
+          if (d < best) { best = d; bi = i / 2; }
+        }
+        if (best < pl.radius) placeTouches.push({ place: pl.id, index: bi, dist: Math.round(best) });
+      }
+      if (!touches.length && !placeTouches.length) continue;
       routes.push({ id: r.id, ref: r.ref, name: r.name, osmc: r.osmc, operator: r.operator, offset: routePts.length / 2, count: s.length / 2, length: Math.round(len), touches,
-        from: r.from, to: r.to, cai: r.cai, durF: r.durF, durB: r.durB, fromAtStart, hasFirst, hasLast, wayIds: r.ways });
+        from: r.from, to: r.to, cai: r.cai, durF: r.durF, durB: r.durB, fromAtStart, hasFirst, hasLast, wayIds: r.ways, placeTouches });
       routePts.push(...s);
     }
   }
@@ -261,6 +271,8 @@ export function bakeOsm({ quiet = false } = {}) {
         const realEnd = fromEnd ? r.hasFirst : r.hasLast;
         let name = (fragment || !realEnd ? '' : (fromEnd ? r.from : r.to)) || '';
         const fullFrom = !realEnd && (fromEnd ? r.from : r.to) ? (fromEnd ? r.from : r.to) : '';
+        const hub = hubs.find((pl) => Math.hypot(pl.xz[0] - sx, pl.xz[1] - sz) < pl.radius);
+        if (hub) name = hub.name;                                   // a named trail hub wins
         if (!name && fullFrom) name = `${fullFrom} → sentiero a ${Math.round(h0)} m`;
         if (!name) {
           let best = 400, bn = '';
@@ -286,7 +298,48 @@ export function bakeOsm({ quiet = false } = {}) {
     it.th = th.id;
     delete it.x; delete it.z;
   }
-  for (const r of routes) delete r.wayIds;
+  // --- trail hubs: every route through a hub, walked from the hub towards each of its ends
+  const placeItineraries = [];
+  routes.forEach((r, ri) => {
+    const maxSac = Math.max(0, ...r.wayIds.map((id) => sacOf.get(id) || 0));
+    const diff = normCai(r.cai) || ['', 'T', 'E', 'EE', 'EEA', 'EEA', 'EEA'][maxSac] || '';
+    for (const pt of r.placeTouches) {
+      for (const end of [0, r.count - 1]) {
+        const step = end > pt.index ? 1 : -1;
+        if (end === pt.index) continue;
+        let len = 0, dplus = 0, dminus = 0, acc = 0;
+        let lastH = demBil(routePts[2 * (r.offset + pt.index)], routePts[2 * (r.offset + pt.index) + 1]);
+        for (let i = pt.index; i !== end; i += step) {
+          const a = 2 * (r.offset + i), b2 = 2 * (r.offset + i + step);
+          const seg = Math.hypot(routePts[b2] - routePts[a], routePts[b2 + 1] - routePts[a + 1]);
+          len += seg; acc += seg;
+          if (acc >= 25 || i + step === end) {
+            const h = demBil(routePts[b2], routePts[b2 + 1]);
+            if (h > lastH) dplus += h - lastH; else dminus += lastH - h;
+            lastH = h; acc = 0;
+          }
+        }
+        if (len < 250) continue;
+        const ex = routePts[2 * (r.offset + end)], ez = routePts[2 * (r.offset + end) + 1];
+        const fromEnd = (end === 0) === r.fromAtStart;
+        const realEnd = fromEnd ? r.hasFirst : r.hasLast;
+        let dest = realEnd ? (fromEnd ? r.from : r.to) : '';
+        const hub = hubs.find((pl) => pl.id !== pt.place && Math.hypot(pl.xz[0] - ex, pl.xz[1] - ez) < pl.radius);
+        if (hub) dest = hub.name;
+        if (!dest) {
+          let best = 400, bn = '';
+          for (const nm of named) { const d = Math.hypot(nm.x - ex, nm.z - ez); if (d < best) { best = d; bn = nm.name; } }
+          dest = bn || `quota ${Math.round(demBil(ex, ez))} m`;
+        }
+        const via = r.touches.filter((t) => t.dist < 250 && (t.index - pt.index) * step > 0 && (end - t.index) * step >= 0).map((t) => t.peak);
+        const h = len / 4000, v = dplus / 400 + dminus / 800;
+        placeItineraries.push({ route: ri, place: pt.place, ref: r.ref, name: r.name, start: r.offset + pt.index, end: r.offset + end,
+          dest, via, diff, length: Math.round(len), dplus: Math.round(dplus), dminus: Math.round(dminus),
+          minutes: Math.round((Math.max(h, v) + Math.min(h, v) / 2) * 60), timeSrc: 'stima', ex: +ex.toFixed(1), ez: +ez.toFixed(1) });
+      }
+    }
+  });
+  for (const r of routes) { delete r.wayIds; delete r.placeTouches; }
 
   // --- crosses >= 600 m
   const crosses = [];
@@ -313,7 +366,7 @@ export function bakeOsm({ quiet = false } = {}) {
 
   const meta = {
     quant: { origin: Q0, scale: QS }, ways: nW, trailPoints: nT, routePoints: nR, classes: CLASSES,
-    routes, huts, crosses, itineraries, trailheads, timestamp: ex.timestamp,
+    routes, huts, crosses, itineraries, trailheads, placeItineraries, timestamp: ex.timestamp,
     attribution: 'Sentieri, rifugi e croci © OpenStreetMap contributors (ODbL)',
   };
   mkdirSync(OUT_DIR, { recursive: true });
@@ -326,6 +379,10 @@ export function bakeOsm({ quiet = false } = {}) {
   for (const p of PEAKS) {
     const its = itineraries.filter((i) => i.peak === p.id);
     log(`  ↑ ${p.name.padEnd(22)} ${its.length} itinerari, partenze: ${[...new Set(its.filter((i) => !i.connector).map((i) => i.trailhead))].join(' · ') || '-'}`);
+  }
+  for (const pl of PLACES) {
+    const its = placeItineraries.filter((i) => i.place === pl.id);
+    log(`  ◆ ${pl.short.padEnd(22)} ${its.length} sentieri: ${its.map((i) => `${i.ref || '-'}→${i.dest}`).join(' · ')}`);
   }
   log(`huts/bivouacs >= ${MIN_HUT_ELE} m: ${huts.length} (${huts.filter((h) => h.type === 'bivouac').length} bivouacs, ${huts.filter((h) => h.fromPoly).length} with footprint); crosses: ${crosses.length}`);
   log(`osm.bin ${(bin.length / 1024).toFixed(0)} KB`);

@@ -20,6 +20,7 @@ No server needed.
 | select a summit | its marked itineraries light up (colour = CAI difficulty T/E/EE/EEA) with trailhead pins |
 | panel: trailhead name · `sali` · `scendi` | fly to the trailhead · walk up to the summit · walk down |
 | V | overview of the selected summit and all its trailheads |
+| Località (◆) | trail hubs (Versasio cable-car station, Piani d'Erna): every marked route through the hub with its destination, summits on the way, +/− elevation and time; `vai` / `torna` walk it |
 | / | search huts and bivouacs by name, Enter flies there |
 | (on a trail) 2–12 km/h · +/− | walking pace |
 | B | forests on/off |

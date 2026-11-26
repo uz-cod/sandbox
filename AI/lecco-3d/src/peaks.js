@@ -18,3 +18,11 @@ export const PEAKS = [
 
 // Crop: 25 x 25 km square centred here (local equirectangular projection, metres).
 export const CROP = { lat: 45.885, lon: 9.40, extent: 25000, samples: 1024 };
+
+// Selectable trail hubs (not summits): every marked route passing here is listed with its
+// destinations. Positions come from route ends in the OSM data; names are curated because the
+// cable car (aerialway) is not in the current OSM extract.
+export const PLACES = [
+  { id: 'versasio', name: "Versasio · funivia Piani d'Erna", short: 'Versasio (funivia)', lat: 45.86068, lon: 9.43247, radius: 160 },
+  { id: 'piani-erna', name: "Piani d'Erna", short: "Piani d'Erna", lat: 45.86630, lon: 9.45017, radius: 260 },
+];

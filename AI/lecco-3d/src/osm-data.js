@@ -20,7 +20,7 @@ const HL_MARGIN = 40;                 // highlighted itineraries are drawn a few
 export const HL_FLAG = 1 << 8;
 export const DIFFS = ['', 'T', 'E', 'EE', 'EEA'];
 export const DIFF_COLORS = [[0.75, 0.75, 0.75], [0.30, 0.80, 0.40], [1.0, 0.72, 0.15], [0.95, 0.27, 0.20], [0.70, 0.40, 1.0]];
-import { PEAKS } from './peaks.js';
+import { PEAKS, PLACES } from './peaks.js';
 
 export async function loadOsm() {
   const stream = new Blob([osmBlob]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
@@ -45,8 +45,11 @@ export async function loadOsm() {
   for (let w = 0; w < nW; w++) if (HALF_WIDTH[cls[w]] > 0) nSeg += counts[w] - 1;
   const huts = osmMeta.huts, crosses = osmMeta.crosses;
   const its = osmMeta.itineraries;
+  const pits = osmMeta.placeItineraries || [];
+  // de-duplicate hub itineraries (same route ref and destination)
+  for (let i = pits.length - 1; i > 0; i--) if (pits.slice(0, i).some((q) => q.place === pits[i].place && q.ref === pits[i].ref && q.dest === pits[i].dest)) pits.splice(i, 1);
   const nTrailSeg = nSeg;
-  for (const it of its) nSeg += Math.abs(it.end - it.start);
+  for (const it of [...its, ...pits]) nSeg += Math.abs(it.end - it.start);
   const nPads = huts.length + crosses.length;
   const segs = new Float32Array((nSeg + 2 * nPads) * 4);
   const attr = new Uint32Array(Math.max(1, nSeg));
@@ -71,8 +74,9 @@ export async function loadOsm() {
     p += n;
   }
   // itinerary segments: flagged, carry difficulty and the bit of their summit
-  const peakBit = (id) => 1 << Math.max(0, PEAKS.findIndex((pk) => pk.id === id));
-  for (const it of its) {
+  // selection bits: summits 0..7, trail hubs 8..15
+  const peakBit = (id) => { const k = PEAKS.findIndex((pk) => pk.id === id); return k >= 0 ? 1 << k : 1 << (8 + PLACES.findIndex((pl) => pl.id === id)); };
+  for (const it of [...its, ...pits.map((p) => ({ ...p, peak: p.place }))]) {
     const dir = it.end > it.start ? 1 : -1;
     const d = Math.max(0, DIFFS.indexOf(it.diff));
     for (let i = it.start; i !== it.end; i += dir) {
@@ -152,13 +156,31 @@ export async function loadOsm() {
     byPeak.get(t.peak).push(t);
   }
   for (const list of byPeak.values()) list.sort((a, b) => a.connector - b.connector || a.ele - b.ele);
-  // trailhead pins: x, y, z, summit bit | r, g, b, kind (0 trailhead, 1 junction)
-  const pins = new Float32Array(ths.length * 8);
-  ths.forEach((t, k) => pins.set([t.x, t.y, t.z, peakBit(t.peak), ...(t.connector ? [0.7, 0.7, 0.7] : [1.0, 0.45, 0.1]), t.connector ? 1 : 0], k * 8));
+  // trail hubs: their itineraries and destination points
+  const places = PLACES.map((pl) => {
+    const [x, z] = [(pl.lon - meta.crop.lon) * meta.metresPerDegree.lon, (meta.crop.lat - pl.lat) * meta.metresPerDegree.lat];
+    return { ...pl, x, z, y: groundHeightCubic(x, z), its: [] };
+  });
+  for (const it of pits) {
+    it.stops = stopsFor(it, routePts);
+    it.h0 = groundHeightCubic(routePts[2 * it.start], routePts[2 * it.start + 1]);
+    it.h1 = groundHeightCubic(it.ex, it.ez);
+    places.find((p) => p.id === it.place).its.push(it);
+  }
+  for (const p of places) p.its.sort((a, b) => (a.ref || 'zzz').localeCompare(b.ref || 'zzz', 'it', { numeric: true }) || a.length - b.length);
+  // pins: x, y, z, selection bit | r, g, b, kind (0 trailhead, 1 junction / destination)
+  const pinList = [];
+  for (const t of ths) pinList.push([t.x, t.y, t.z, peakBit(t.peak), ...(t.connector ? [0.7, 0.7, 0.7] : [1.0, 0.45, 0.1]), t.connector ? 1 : 0]);
+  for (const p of places) {
+    pinList.push([p.x, p.y, p.z, peakBit(p.id), 1.0, 0.45, 0.1, 0]);
+    for (const it of p.its) pinList.push([it.ex, it.h1, it.ez, peakBit(p.id), 0.75, 0.75, 0.75, 1]);
+  }
+  const pins = new Float32Array(pinList.length * 8);
+  pinList.forEach((v, k) => pins.set(v, k * 8));
 
   return {
     segs, attr, grid, gridInfo: [gx0, gz0, GRID_CELL, dim], nSeg, nTrailSeg, nPads, maxPerCell,
-    mesh, routePts, trailheads: ths, byPeak, pins, peakBit, huts,
+    mesh, routePts, trailheads: ths, byPeak, pins, peakBit, huts, places,
   };
 }
 

@@ -13,12 +13,14 @@
     border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 10px 12px; }
   #ui { top: 16px; left: 16px; width: 320px; max-height: calc(100vh - 110px); overflow-y: auto; }
   #ui h1 { font-size: 14px; margin: 0 0 8px; font-weight: 600; letter-spacing: .02em; }
-  #peaks { display: flex; flex-direction: column; gap: 2px; }
-  #peaks button { all: unset; cursor: pointer; display: grid; grid-template-columns: 20px 1fr auto; gap: 8px;
+  #peaks, #places { display: flex; flex-direction: column; gap: 2px; }
+  .sub { font-size: 11px; color: var(--dim); margin: 8px 0 2px 6px; text-transform: uppercase; letter-spacing: .06em; }
+  #peaks button, #places button { all: unset; cursor: pointer; display: grid; grid-template-columns: 20px 1fr auto; gap: 8px;
     align-items: center; padding: 5px 6px; border-radius: 6px; color: var(--fg); }
-  #peaks button:hover { background: rgba(255,255,255,.08); }
-  #peaks button.active { background: rgba(255,210,122,.16); color: var(--acc); }
-  #peaks kbd { font: 11px ui-monospace, monospace; color: var(--dim); text-align: center;
+  #peaks button:hover, #places button:hover { background: rgba(255,255,255,.08); }
+  #peaks button.active, #places button.active { background: rgba(255,210,122,.16); color: var(--acc); }
+  #places kbd { color: #ff7319; border: none; }
+  #peaks kbd, #places kbd { font: 11px ui-monospace, monospace; color: var(--dim); text-align: center;
     border: 1px solid rgba(255,255,255,.18); border-radius: 4px; padding: 0 3px; }
   #peaks .e, #trails .e { color: var(--dim); font-variant-numeric: tabular-nums; }
   #trailsHead { margin: 10px 0 4px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.1); font-size: 12px; color: var(--dim); }
@@ -44,6 +46,9 @@
   .lbl { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 11.5px; font-weight: 600; color: #fff;
     background: rgba(20,20,20,.62); padding: 1px 6px; border-radius: 4px; text-shadow: 0 1px 1px #000; }
   .lbl span { font-weight: 400; color: rgba(255,255,255,.75); }
+  .lbl.dim { font-weight: 400; background: rgba(20,20,20,.45); }
+  #trails .it.hub { padding-left: 6px; align-items: start; }
+  #trails .it.hub .n b { font-weight: 600; } #trails .it.hub .dim { color: var(--dim); }
   body.nohud #labels { display: none; }
   .searchBox { position: relative; margin: 0 0 8px; }
   #search { width: 100%; box-sizing: border-box; font: inherit; font-size: 12.5px; color: var(--fg); background: rgba(255,255,255,.08);
@@ -98,6 +103,8 @@
     <div id="results" style="display:none"></div>
   </div>
   <div id="peaks"></div>
+  <div class="sub">Località</div>
+  <div id="places"></div>
   <div id="trailsHead"></div>
   <div id="trails"></div>
 </div>

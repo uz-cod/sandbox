@@ -76,6 +76,55 @@ function showTrails(i) {
   buildLabels(ths);
 }
 
+// ------------------------------------------------------------------ trail hubs (Erna, ...)
+let activePlace = -1;
+function selectPlace(k) {
+  const pl = osm.places[k];
+  endFollow();
+  activePeak = -1; activePlace = k;
+  document.querySelectorAll('#peaks button').forEach((b) => b.classList.remove('active'));
+  document.querySelectorAll('#places button').forEach((b, j) => b.classList.toggle('active', j === k));
+  renderer.setSelection(osm.peakBit(pl.id));
+  // view from above, frame the hub and its nearer destinations
+  let r = 700;
+  for (const it of pl.its) r = Math.max(r, Math.min(3500, Math.hypot(it.ex - pl.x, it.ez - pl.z) * 0.8));
+  const ang = (230 * Math.PI) / 180, dist = r * 1.2;
+  const x = pl.x + Math.sin(ang) * dist, z = pl.z - Math.cos(ang) * dist;
+  const y = pl.y + r * 0.9;
+  placeCamera(x, y, z, Math.atan2(pl.x - x, -(pl.z - z)), Math.atan2(pl.y - y, dist));
+  const box = $('trails');
+  box.innerHTML = '';
+  $('trailsHead').innerHTML = `Sentieri da ${esc(pl.name)} <span class="dim">· ${pl.its.length}</span>`;
+  const head = document.createElement('div');
+  head.className = 'th';
+  for (const it of pl.its) {
+    const r2 = document.createElement('div');
+    r2.className = 'it hub';
+    const via = it.via.map((id) => peaks.find((p) => p.id === id)?.name).filter(Boolean);
+    r2.title = [it.name, via.length ? `passa da ${via.join(', ')}` : '', 'tempo stimato (4 km/h, +400 m/h, −800 m/h)', ...it.stops.map((s) => `${s.name} a ${fmtKm(s.along)}`)].filter(Boolean).join('\n');
+    r2.innerHTML = `<span class="r">${esc(it.ref || '–')}</span><span class="d d${esc(it.diff || 'x')}">${esc(it.diff || '?')}</span>`
+      + `<span class="n"><b>→ ${esc(it.dest)}</b>${via.length ? ` <span class="dim">via ${esc(via.join(', '))}</span>` : ''}<br>${fmtKm(it.length)} · +${it.dplus} −${it.dminus} m · ${fmtTime(it.minutes)}*</span>`;
+    const go = document.createElement('button'); go.textContent = 'vai'; go.title = `Cammina da ${pl.short} verso ${it.dest}`;
+    const back = document.createElement('button'); back.textContent = 'torna'; back.title = `Cammina da ${it.dest} a ${pl.short}`;
+    go.addEventListener('click', (e) => { e.stopPropagation(); beginFollow({ ...it, hubName: pl.short }); go.blur(); });
+    back.addEventListener('click', (e) => { e.stopPropagation(); beginFollow({ ...reversed(it), hubName: pl.short, back: true }); back.blur(); });
+    r2.append(go, back);
+    head.appendChild(r2);
+  }
+  box.appendChild(head);
+  // labels: hub + destinations
+  const layer = $('labels');
+  layer.innerHTML = '';
+  const mk = (name, x, y, z, dim) => {
+    const el = document.createElement('div');
+    el.className = 'lbl' + (dim ? ' dim' : '');
+    el.innerHTML = `${esc(name)} <span>${Math.round(y)} m</span>`;
+    layer.appendChild(el);
+    return { t: { x, y, z }, el };
+  };
+  labels = [mk(pl.name, pl.x, pl.y, pl.z, false), ...pl.its.map((it) => mk(it.dest, it.ex, it.h1, it.ez, true))];
+}
+
 // Camera views
 function flyToTrailhead(t, p) {
   endFollow();
@@ -206,9 +255,10 @@ function beginFollow(o, startDist = 0) {
   startFollow(osm.routePts, o, startDist);
   document.body.classList.add('following');
   const label = o.ref ? `Sentiero ${o.ref}` : 'Sentiero';
-  const up = o.h1 > o.h0;
-  const th = osm.trailheads[o.th];
-  $('fTitle').textContent = `${label}${o.diff ? ` (${o.diff})` : ''} · ${up ? `da ${th.name} alla vetta` : `dalla vetta a ${th.name}`}`;
+  let what;
+  if (o.hubName) what = o.back ? `da ${o.dest} a ${o.hubName}` : `da ${o.hubName} a ${o.dest}`;
+  else { const th = osm.trailheads[o.th]; what = o.h1 > o.h0 ? `da ${th.name} alla vetta` : `dalla vetta a ${th.name}`; }
+  $('fTitle').textContent = `${label}${o.diff ? ` (${o.diff})` : ''} · ${what}`;
 }
 function endFollow() {
   stopFollow();
@@ -230,7 +280,8 @@ function gotoPeak(i) {
   endFollow();
   placeCamera(x, y, z, Math.atan2(dx, -dz), pitch);
   document.querySelectorAll('#peaks button').forEach((b, k) => b.classList.toggle('active', k === i));
-  activePeak = i;
+  document.querySelectorAll('#places button').forEach((b) => b.classList.remove('active'));
+  activePeak = i; activePlace = -1;
   renderer?.setSelection(osm ? osm.peakBit(p.id) : 0);
   showTrails(i);
 }
@@ -243,6 +294,12 @@ function buildUI() {
     b.innerHTML = `<kbd>${i + 1}</kbd><span class="n">${p.name}</span><span class="e">${elev}</span>`;
     b.addEventListener('click', (e) => { e.stopPropagation(); gotoPeak(i); b.blur(); });
     list.appendChild(b);
+  });
+  osm.places.forEach((pl, k) => {
+    const b = document.createElement('button');
+    b.innerHTML = `<kbd>◆</kbd><span class="n">${esc(pl.short)}</span><span class="e">${Math.round(pl.y)} m</span>`;
+    b.addEventListener('click', (e) => { e.stopPropagation(); selectPlace(k); b.blur(); });
+    $('places').appendChild(b);
   });
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement) return;
@@ -298,6 +355,7 @@ async function main() {
         if (it) beginFollow(dn ? reversed(it) : it, Number(along) || 0);
       }
       if (params.has('overview')) overview(idx);
+      if (params.has('place')) selectPlace(Number(params.get('place')) || 0);
     }
     status.remove();
 
