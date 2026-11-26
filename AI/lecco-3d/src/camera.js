@@ -32,7 +32,8 @@ function setKey(code, v) {
 }
 
 export function attachInput(canvas) {
-  window.addEventListener('keydown', (e) => { if (setKey(e.code, 1)) e.preventDefault(); });
+  const typing = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
+  window.addEventListener('keydown', (e) => { if (!typing(e) && setKey(e.code, 1)) e.preventDefault(); });
   window.addEventListener('keyup', (e) => { setKey(e.code, 0); });
   window.addEventListener('blur', () => { for (const k in input) input[k] = 0; });
   canvas.addEventListener('click', () => { if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.(); });
@@ -58,7 +59,7 @@ export function placeCamera(x, y, z, yaw, pitch) {
 // Walks the camera along a polyline (route chained by the OSM bake) at eye height.
 export const follow = {
   active: false, pts: null, cum: null, n: 0, total: 0, s: 0, auto: true,
-  speed: 1.5, yawOff: 0, pitchOff: 0, idle: 0, eye: 1.7, opt: null,
+  kmh: 4, yawOff: 0, pitchOff: 0, idle: 0, eye: 1.7, opt: null,
 };
 const tmp = new Float64Array(2), tmp2 = new Float64Array(2);
 
@@ -109,7 +110,7 @@ function updateFollow(dt) {
 
   const manual = input.f - input.b;
   const dir = manual !== 0 ? manual : follow.auto ? 1 : 0;
-  let v = follow.speed * camera.speedMul * (input.fast ? 4 : 1) * (input.slow ? 0.3 : 1);
+  const v = (follow.kmh / 3.6) * (input.fast ? 3 : 1) * (input.slow ? 0.4 : 1);
   const prevS = follow.s;
   follow.s = Math.max(0, Math.min(follow.total, follow.s + dir * v * dt));
   // auto-walk pauses on arrival at a hut along the route (Space to continue)

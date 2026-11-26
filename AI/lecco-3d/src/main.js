@@ -125,6 +125,82 @@ function updateLabels(vp, cam, w, h) {
   }
 }
 
+// ------------------------------------------------------------------ hut search
+const norm = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+let hutIndex = [];
+function buildHutSearch() {
+  hutIndex = osm.huts.map((h) => ({ h, key: norm(h.name || '') })).filter((e) => e.key);
+  const input = $('search'), list = $('results');
+  let hits = [], sel = 0;
+  const render = () => {
+    list.innerHTML = '';
+    hits.forEach((e, k) => {
+      const b = document.createElement('button');
+      b.className = k === sel ? 'sel' : '';
+      b.innerHTML = `<span class="ico ${e.h.type}"></span><span>${esc(e.h.name)}</span><span class="e">${Math.round(e.h.base)} m</span>`;
+      b.addEventListener('mousedown', (ev) => { ev.preventDefault(); choose(e.h); });
+      list.appendChild(b);
+    });
+    list.style.display = hits.length ? '' : 'none';
+  };
+  const choose = (h) => { input.value = h.name; hits = []; render(); input.blur(); flyToHut(h); };
+  input.addEventListener('input', () => {
+    const q = norm(input.value).split(/\s+/).filter(Boolean);
+    hits = q.length ? hutIndex.filter((e) => q.every((w) => e.key.includes(w)))
+      .sort((a, b) => a.key.indexOf(q[0]) - b.key.indexOf(q[0]) || a.key.localeCompare(b.key)).slice(0, 8) : [];
+    sel = 0; render();
+  });
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'ArrowDown') { sel = Math.min(hits.length - 1, sel + 1); render(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = Math.max(0, sel - 1); render(); e.preventDefault(); }
+    else if (e.key === 'Enter' && hits[sel]) choose(hits[sel].h);
+    else if (e.key === 'Escape') { input.value = ''; hits = []; render(); input.blur(); }
+  });
+  input.addEventListener('blur', () => setTimeout(() => { hits = []; render(); }, 150));
+}
+function flyToHut(h) {
+  endFollow();
+  // stand on the downhill side, a bit above, looking at the hut
+  let bx = 0, bz = 0, best = Infinity;
+  for (let a = 0; a < 8; a++) {
+    const ang = (a * Math.PI) / 4, x = h.x + Math.sin(ang) * 70, z = h.z - Math.cos(ang) * 70;
+    const g = groundHeight(x, z);
+    if (g < best) { best = g; bx = x; bz = z; }
+  }
+  const y = Math.max(best, h.base) + 22;
+  placeCamera(bx, y, bz, Math.atan2(h.x - bx, -(h.z - bz)), Math.atan2(h.base + 4 - y, Math.hypot(h.x - bx, h.z - bz)));
+  toast(`${h.name} · ${Math.round(h.base)} m`);
+}
+let toastT = 0;
+function toast(text) {
+  const t = $('toast');
+  t.textContent = text; t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ------------------------------------------------------------------ walking speed
+const SPEEDS = [2, 3, 4, 5, 7, 12];
+function buildSpeed() {
+  const box = $('speed');
+  SPEEDS.forEach((v) => {
+    const b = document.createElement('button');
+    b.textContent = v;
+    b.title = v >= 7 ? `${v} km/h (corsa)` : `${v} km/h`;
+    b.addEventListener('click', (e) => { e.stopPropagation(); setSpeed(v); b.blur(); });
+    box.appendChild(b);
+  });
+  setSpeed(follow.kmh);
+}
+function setSpeed(v) {
+  follow.kmh = v;
+  [...$('speed').children].forEach((b) => b.classList.toggle('on', Number(b.textContent) === v));
+}
+function stepSpeed(d) {
+  const i = SPEEDS.indexOf(follow.kmh);
+  setSpeed(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (i < 0 ? 2 : i) + d))]);
+}
+
 function beginFollow(o, startDist = 0) {
   startFollow(osm.routePts, o, startDist);
   document.body.classList.add('following');
@@ -168,6 +244,8 @@ function buildUI() {
     list.appendChild(b);
   });
   window.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement) return;
+    if (e.key === '/') { e.preventDefault(); $('search').focus(); return; }
     const k = e.key >= '1' && e.key <= '9' ? Number(e.key) - 1 : -1;
     if (k >= 0 && k < peaks.length) gotoPeak(k);
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
@@ -175,9 +253,13 @@ function buildUI() {
     if (follow.active) {
       if (e.code === 'KeyF' || e.code === 'Escape') endFollow();
       if (e.code === 'Space') follow.auto = !follow.auto;
+      if (e.key === '+' || e.code === 'NumpadAdd' || e.code === 'Equal') stepSpeed(1);
+      if (e.key === '-' || e.code === 'NumpadSubtract' || e.code === 'Minus') stepSpeed(-1);
     }
   });
   $('credits').textContent = `${meta.attribution} · ${osmMeta.attribution}`;
+  buildHutSearch();
+  buildSpeed();
 }
 
 async function main() {

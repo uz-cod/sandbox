@@ -158,7 +158,7 @@ export async function loadOsm() {
 
   return {
     segs, attr, grid, gridInfo: [gx0, gz0, GRID_CELL, dim], nSeg, nTrailSeg, nPads, maxPerCell,
-    mesh, routePts, trailheads: ths, byPeak, pins, peakBit,
+    mesh, routePts, trailheads: ths, byPeak, pins, peakBit, huts,
   };
 }
 

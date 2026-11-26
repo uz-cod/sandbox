@@ -45,6 +45,25 @@
     background: rgba(20,20,20,.62); padding: 1px 6px; border-radius: 4px; text-shadow: 0 1px 1px #000; }
   .lbl span { font-weight: 400; color: rgba(255,255,255,.75); }
   body.nohud #labels { display: none; }
+  .searchBox { position: relative; margin: 0 0 8px; }
+  #search { width: 100%; box-sizing: border-box; font: inherit; font-size: 12.5px; color: var(--fg); background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.14); border-radius: 7px; padding: 6px 9px; outline: none; }
+  #search:focus { border-color: rgba(255,210,122,.6); background: rgba(255,255,255,.12); }
+  #results { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px); background: rgba(18,22,26,.96);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 4px; }
+  #results button { all: unset; cursor: pointer; display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; align-items: center;
+    width: calc(100% - 12px); padding: 5px 6px; border-radius: 6px; font-size: 12.5px; }
+  #results button:hover, #results button.sel { background: rgba(255,210,122,.16); }
+  #results .e { color: var(--dim); }
+  #results .ico { width: 9px; height: 9px; border-radius: 2px; background: #c9b79c; }
+  #results .ico.bivouac { background: #c0392b; }
+  #follow .spd { font-size: 12px; color: var(--dim); margin-top: 4px; }
+  #speed button { all: unset; cursor: pointer; font: 11px ui-monospace, monospace; color: var(--fg); padding: 0 6px; margin: 0 1px;
+    border: 1px solid rgba(255,255,255,.18); border-radius: 4px; line-height: 17px; }
+  #speed button.on { background: var(--acc); color: #111; border-color: var(--acc); }
+  #toast { position: fixed; top: 18px; left: 50%; transform: translate(-50%, -8px); opacity: 0; transition: .25s;
+    background: rgba(14,18,22,.8); padding: 6px 14px; border-radius: 8px; font-size: 13px; pointer-events: none; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
   #trails .r { font: 600 10.5px ui-monospace, monospace; color: #1b1b1b; background: #f2f2f2; border-radius: 3px; padding: 0 4px;
     box-shadow: inset 0 3px 0 #d9342b, inset 0 -3px 0 #d9342b; line-height: 17px; min-width: 22px; text-align: center; }
   #trails .n { color: var(--fg); line-height: 1.25; }
@@ -74,6 +93,10 @@
 <div id="status">Caricamento…</div>
 <div id="ui" class="panel">
   <h1>Montagne di Lecco</h1>
+  <div class="searchBox">
+    <input id="search" type="search" placeholder="Cerca rifugio o bivacco…  ( / )" autocomplete="off" spellcheck="false">
+    <div id="results" style="display:none"></div>
+  </div>
   <div id="peaks"></div>
   <div id="trailsHead"></div>
   <div id="trails"></div>
@@ -81,7 +104,8 @@
 <div id="follow" class="panel">
   <b id="fTitle"></b>
   <div class="p"><span id="fProg"></span> · <span id="fState"></span></div>
-  <div class="k"><kbd>Spazio</kbd> pausa · <kbd>W</kbd>/<kbd>S</kbd> avanti/indietro · <kbd>Shift</kbd> corri · mouse guarda · <kbd>F</kbd> esci</div>
+  <div class="spd">passo <span id="speed"></span> km/h</div>
+  <div class="k"><kbd>Spazio</kbd> pausa · <kbd>W</kbd>/<kbd>S</kbd> avanti/indietro · <kbd>+</kbd>/<kbd>−</kbd> passo · <kbd>Shift</kbd> ×3 · mouse guarda · <kbd>F</kbd> esci</div>
 </div>
 <div id="hud" class="panel">
   quota <b id="alt">–</b> m · suolo +<b id="agl">–</b> m<br>
@@ -93,6 +117,7 @@
   <kbd>Shift</kbd> veloce · <kbd>Alt</kbd> lento · rotella: velocità · <kbd>1–8</kbd> vette · <kbd>V</kbd> vista d'insieme · <kbd>H</kbd> nascondi interfaccia
 </div>
 <div id="credits"></div>
+<div id="toast"></div>
 <!--APP-->
 </body>
 </html>
