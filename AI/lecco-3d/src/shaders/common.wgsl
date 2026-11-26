@@ -172,3 +172,30 @@ fn tonemap(c: vec3f, fragXY: vec2f) -> vec4f {
   let n = fract(52.9829189 * fract(dot(fragXY, vec2f(0.06711056, 0.00583715))));
   return vec4f(srgb + (n - 0.5) / 255.0, 1.0);
 }
+
+// ---------------------------------------------------------------- vegetation zones
+fn cliffNoise(p: vec3f, n: vec3f, s: f32) -> f32 {
+  // project onto the cliff plane so vertical faces are not smeared
+  let t = normalize(vec2f(-n.z, n.x) + vec2f(1e-4, 0.0));
+  let uvCliff = vec2f(dot(p.xz, t), p.y);
+  return mix(noise(p.xz / s), noise(uvCliff / s), smoothstep(0.85, 0.55, n.y));
+}
+
+// Shared by the terrain material and the tree scatter (keep in sync = one function).
+// Returns (forest weight, rock weight, snow weight) on the smooth base normal nb.
+fn zoneWeights(p: vec3f, nb: vec3f, curv: f32) -> vec3f {
+  let h = p.y;
+  let n1 = noise(p.xz / 230.0);
+  let n2 = noise(p.xz / 61.0 + 17.0);
+  let n3 = cliffNoise(p, nb, 9.0);
+  let northness = -nb.z;
+  let slope = 1.0 - nb.y;
+  let rockW = smoothstep(0.21, 0.36, slope + n1 * 0.05 + n3 * 0.05 - max(curv, 0.0) * 0.03 + max(-curv, 0.0) * 0.02);
+  let treeLine = 1500.0 + n1 * 150.0 - northness * 50.0;
+  var forestW = 1.0 - smoothstep(treeLine - 90.0, treeLine + 60.0, h + n3 * 50.0);
+  forestW *= smoothstep(0.03, 0.10, slope + n2 * 0.04) * smoothstep(-0.25, 0.2, n1 + n2 * 0.5 + 0.3);
+  let snowLine = F.misc.x - northness * 250.0 + n1 * 120.0;
+  var snowW = smoothstep(-0.15, 0.25, (h - snowLine) / 250.0 + curv * 0.12 + n2 * 0.35 + noise(p.xz / 17.0) * 0.2);
+  snowW *= 1.0 - smoothstep(0.30, 0.50, slope - max(curv, 0.0) * 0.05);
+  return vec3f(forestW, rockW, snowW);
+}

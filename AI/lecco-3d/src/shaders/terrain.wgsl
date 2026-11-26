@@ -14,58 +14,6 @@ struct Level {
 @group(0) @binding(4) var shadeTex: texture_2d<f32>;    // (sun vis, ao, sky view) over ext
 @group(0) @binding(5) var waterTex: texture_2d<f32>;    // (water fraction, shore distance) over crop
 @group(0) @binding(6) var linSamp: sampler;
-// OSM features (see src/osm-data.js): trail segments (a.xy, b.xy) followed by pads
-// (2 x vec4: centre, cos, sin | half size u, half size w, base height, margin);
-// cells = CSR grid: [cellCount + 1 start offsets | items]; item high bit = pad.
-@group(0) @binding(7) var<storage, read> segs: array<vec4f>;
-@group(0) @binding(8) var<storage, read> segAttr: array<u32>;
-@group(0) @binding(9) var<storage, read> cells: array<u32>;
-
-struct Feat { edge: f32, center: f32, halfW: f32, attr: u32, padW: f32, padH: f32, hlD: f32, hlAttr: u32 };
-
-fn features(xz: vec2f, wantTrails: bool) -> Feat {
-  var f: Feat;
-  f.edge = 1e9; f.center = 1e9; f.halfW = 0.0; f.attr = 0u; f.padW = 0.0; f.padH = 0.0; f.hlD = 1e9; f.hlAttr = 0u;
-  let sel = u32(F.misc.w);
-  let g = (xz - F.grid.xy) / F.grid.z;
-  let n = F.grid.w;
-  if (g.x < 0.0 || g.y < 0.0 || g.x >= n || g.y >= n) { return f; }
-  let c = u32(g.y) * u32(n) + u32(g.x);
-  let a = cells[c];
-  let b = min(cells[c + 1u], a + 160u);
-  for (var i = a; i < b; i++) {
-    let it = cells[i];
-    if ((it & 0x80000000u) != 0u) {
-      let k = it & 0x7fffffffu;
-      let p0 = segs[k];
-      let p1 = segs[k + 1u];
-      let d = xz - p0.xy;
-      let local = vec2f(d.x * p0.z + d.y * p0.w, -d.x * p0.w + d.y * p0.z);
-      let q = abs(local) - p1.xy;
-      let outside = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0);
-      let w = 1.0 - smoothstep(0.0, p1.w, outside);
-      if (w > f.padW) { f.padW = w; f.padH = p1.z; }
-    } else if (wantTrails) {
-      let at = segAttr[it];
-      let isHL = (at & 256u) != 0u;
-      if (isHL && ((at >> 16u) & sel) == 0u) { continue; }   // itinerary of a summit not selected
-      let s = segs[it];
-      let pa = xz - s.xy;
-      let ba = s.zw - s.xy;
-      let h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
-      let dc = length(pa - ba * h);
-      if (isHL) {
-        if (dc < f.hlD) { f.hlD = dc; f.hlAttr = at; }
-      } else {
-        let hw = f32(at >> 16u) * 0.001;
-        let e = dc - hw;
-        if (e < f.edge) { f.edge = e; f.center = dc; f.halfW = hw; f.attr = at; }
-      }
-    }
-  }
-  return f;
-}
-
 const GRID: u32 = 128u;
 const RELIEF_WL: f32 = 56.0;   // wavelength of the first micro-relief octave (m)
 
@@ -132,13 +80,6 @@ fn vsTerrain(@builtin(vertex_index) vid: u32, @builtin(instance_index) li: u32) 
 // ---------------------------------------------------------------- materials
 struct Surf { albedo: vec3f, snow: f32, occl: f32, dbg: vec3f };
 
-fn cliffNoise(p: vec3f, n: vec3f, s: f32) -> f32 {
-  // project onto the cliff plane so vertical faces are not smeared
-  let t = normalize(vec2f(-n.z, n.x) + vec2f(1e-4, 0.0));
-  let uvCliff = vec2f(dot(p.xz, t), p.y);
-  return mix(noise(p.xz / s), noise(uvCliff / s), smoothstep(0.85, 0.55, n.y));
-}
-
 // Zones are chosen on the smooth base normal `nb` (stable), detail on the lit normal `n`.
 fn material(p: vec3f, nb: vec3f, n: vec3f, curv: f32, relief: f32, dist: f32) -> Surf {
   let h = p.y;
@@ -180,16 +121,13 @@ fn material(p: vec3f, nb: vec3f, n: vec3f, curv: f32, relief: f32, dist: f32) ->
   forest *= mix(0.25, 1.2, gap);
 
   // --- weights
-  let rockW = smoothstep(0.21, 0.36, slope + n1 * 0.05 + n3 * 0.05 - max(curv, 0.0) * 0.03 + max(-curv, 0.0) * 0.02);
+  let zw = zoneWeights(p, nb, curv);
+  let rockW = zw.y;
   // limestone outcrops poking through meadows where the micro relief is high
   let outcrop = smoothstep(0.55, 0.85, relief * 0.35 + n3 * 0.35 + 0.35) * smoothstep(0.05, 0.16, slope) * smoothstep(700.0, 1100.0, h);
-  let treeLine = 1500.0 + n1 * 150.0 - northness * 50.0;
-  var forestW = 1.0 - smoothstep(treeLine - 90.0, treeLine + 60.0, h + n3 * 50.0);
-  forestW *= smoothstep(0.03, 0.10, slope + n2 * 0.04) * smoothstep(-0.25, 0.2, n1 + n2 * 0.5 + 0.3);
+  let forestW = zw.x;
   // snow (late spring): patchy, lingering in gullies and on north faces
-  let snowLine = F.misc.x - northness * 250.0 + n1 * 120.0;
-  var snowW = smoothstep(-0.15, 0.25, (h - snowLine) / 250.0 + curv * 0.12 + n2 * 0.35 + noise(p.xz / 17.0) * 0.2);
-  snowW *= 1.0 - smoothstep(0.30, 0.50, slope - max(curv, 0.0) * 0.05);
+  let snowW = zw.z;
 
   var c = mix(grass, forest, forestW);
   c = mix(c, rock, max(rockW, outcrop * (1.0 - forestW)));

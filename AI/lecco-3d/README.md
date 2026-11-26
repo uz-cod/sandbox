@@ -20,6 +20,9 @@ No server needed.
 | select a summit | its marked itineraries light up (colour = CAI difficulty T/E/EE/EEA) with trailhead pins |
 | panel: trailhead name · `sali` · `scendi` | fly to the trailhead · walk up to the summit · walk down |
 | V | overview of the selected summit and all its trailheads |
+| / | search huts and bivouacs by name, Enter flies there |
+| (on a trail) 2–12 km/h · +/− | walking pace |
+| B | forests on/off |
 | (on a trail) Space · W/S · Shift · F | pause/resume · forward/back · run · leave the trail |
 | H | hide the interface |
 
@@ -65,6 +68,12 @@ npm run shot -- "peak=2&hud=0"   # headless screenshots into shots/ (needs Playw
   analytically (exact distance to segments, irregular worn edges, gravel up close, sub-pixel
   coverage far away). Huts/bivouacs/crosses are a procedural mesh (stone walls with windows and
   shutters, timber gables, slab or metal roofs, red metal bivouacs).
+- **Forests**: every frame a compute pass scatters trees on a world-anchored jittered grid around
+  the camera (4 m cells to 300 m → instanced low-poly beech/spruce meshes; 12 m cells to 2.7 km →
+  procedural billboards), with the same zone rule as the terrain's forest material, trails/huts/
+  lakes kept clear, frustum culling, and atomic counters feeding `drawIndirect`. Trees are planted
+  partly into the surface because the DSM already contains the canopy. LOD cross-fades use
+  alpha-to-coverage. `B` toggles them (or `trees=0`).
 - **Startup GPU passes**: normals/curvature, soft sun shadows (heightfield ray march) and
   horizon-based AO over the crop + 6 km margin.
 - **Terrain**: 10 nested clipmap rings (128² cells, 2 m → 1 km spacing) with CDLOD-style
@@ -80,7 +89,8 @@ npm run shot -- "peak=2&hud=0"   # headless screenshots into shots/ (needs Playw
 
 - Beyond the 25 km crop the terrain is a placeholder (mirrored edge fading into low hills);
   a real horizon needs the neighbouring tiles (N46 E009, N45 E008, N46 E008).
-- 30 m data: summit domes look smooth up close; no trees, no lake reflections yet.
+- 30 m data: summit domes look smooth up close; trees stand partly in the DSM canopy, so trails
+  through forests run at canopy height; no lake reflections yet.
 - Huts are generic (footprint, size and type from OSM); the Magnodeno ones will get a dedicated
   model from photos.
 - Summit positions start from the OSM peak nodes and are snapped to the DEM maximum.

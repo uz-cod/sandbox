@@ -21,6 +21,7 @@ const opts = {
   renderScale: Number(params.get('scale')) || Math.min(window.devicePixelRatio || 1, 1.5),
   onProgress: (msg) => { status.textContent = msg; },
   offscreen: params.has('shot'),
+  trees: params.get('trees') !== '0',
 };
 const shotMode = params.has('shot');
 if (params.get('hud') === '0') document.body.classList.add('nohud');
@@ -250,6 +251,7 @@ function buildUI() {
     if (k >= 0 && k < peaks.length) gotoPeak(k);
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
     if (e.code === 'KeyV' && activePeak >= 0) overview(activePeak);
+    if (e.code === 'KeyB') { opts.trees = !opts.trees; renderer.setTrees(opts.trees); toast(opts.trees ? 'Boschi attivi' : 'Boschi nascosti'); }
     if (follow.active) {
       if (e.code === 'KeyF' || e.code === 'Escape') endFollow();
       if (e.code === 'Space') follow.auto = !follow.auto;
