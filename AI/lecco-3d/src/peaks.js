@@ -28,4 +28,6 @@ export const PLACES = [
   { id: 'piani-erna', name: "Piani d'Erna", short: "Piani d'Erna", lat: 45.86630, lon: 9.45017, radius: 260 },
   { id: 'resinelli', name: 'Piani dei Resinelli', short: 'Piani dei Resinelli', lat: 45.90650, lon: 9.38900, radius: 1000 },
   { id: 'rosalba', name: 'Rifugio Rosalba', short: 'Rifugio Rosalba', lat: 45.92228, lon: 9.37616, radius: 150 },
+  { id: 'erve', name: 'Erve', short: 'Erve', lat: 45.82550, lon: 9.45150, radius: 900 },
+  { id: 'morterone', name: 'Morterone', short: 'Morterone', lat: 45.87320, lon: 9.48180, radius: 450 },
 ];

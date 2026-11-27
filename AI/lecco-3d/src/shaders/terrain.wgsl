@@ -139,7 +139,8 @@ fn material(p: vec3f, nb: vec3f, n: vec3f, curv: f32, relief: f32, dist: f32) ->
   let fields = mix(vec3f(0.10, 0.14, 0.055), vec3f(0.17, 0.165, 0.12), smoothstep(0.2, 0.8, noise(p.xz / 90.0)) * 0.6);
   c = mix(c, fields, lowW * 0.6);
   // built-up areas: streets, yards and (from far away) the roofscape of the towns
-  let urb = urbanWeight(p, nb, waterUrbanAt(p.xz).b);
+  let park = parkWeight(p.xz);
+  let urb = urbanWeight(p, nb, waterUrbanAt(p.xz).b) * (1.0 - park);
   let blocks = noise(p.xz / 23.0) * 0.5 + noise(p.xz / 7.0) * 0.3 * mid;
   let townCol = mix(mix(vec3f(0.17, 0.17, 0.16), vec3f(0.11, 0.14, 0.07), smoothstep(-0.3, 0.4, blocks)), mix(vec3f(0.30, 0.17, 0.12), vec3f(0.40, 0.37, 0.32), smoothstep(-0.2, 0.3, blocks)), smoothstep(1500.0, 4500.0, dist) * 0.8);
   c = mix(c, mix(townCol, c, 0.35 * (noise(p.xz / 140.0 + 3.0) * 0.5 + 0.5)), urb * 0.6);

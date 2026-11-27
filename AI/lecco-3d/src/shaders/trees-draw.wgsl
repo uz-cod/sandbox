@@ -166,7 +166,8 @@ struct HOut {
 fn vsHouse(@location(0) lp: vec3f, @location(1) ln: vec3f, @location(2) part: f32,
            @location(3) ip: vec4f, @location(4) info: vec4f) -> HOut {
   let L = info.x; let W = info.y; let H = ip.w;
-  let rise = 0.30 * W;
+  let shed = info.w < 0.0;
+  let rise = select(0.30 * W, 0.6, shed);
   var scale = vec3f(L, H, W);
   var l = lp * scale;
   if (part > 0.5) { scale = vec3f(L * 1.04, rise, W * 1.08); l = vec3f(lp.x * L * 1.04, H + lp.y * rise, lp.z * W * 1.08); }
@@ -183,10 +184,25 @@ fn vsHouse(@location(0) lp: vec3f, @location(1) ln: vec3f, @location(2) part: f3
 
 @fragment
 fn fsHouse(i: HOut) -> @location(0) vec4f {
-  let seed = fract(i.info.w);
+  let shed = i.info.w < 0.0;
+  let seed = fract(abs(i.info.w));
   let n = normalize(i.nrm);
   var albedo: vec3f;
-  if (i.dims.w > 0.5 && i.dims.w < 1.5) {
+  if (shed) {
+    if (i.dims.w > 0.5 && i.dims.w < 1.5) {
+      // flat metal / membrane roof with skylight strips
+      albedo = mix(vec3f(0.42, 0.43, 0.44), vec3f(0.60, 0.60, 0.58), fract(seed * 5.7));
+      albedo *= 0.85 + 0.15 * step(0.85, fract(i.loc.x / 6.0));
+    } else {
+      // corrugated panels, a coloured band, loading doors
+      albedo = select(vec3f(0.55, 0.55, 0.53), vec3f(0.62, 0.58, 0.50), fract(seed * 3.3) > 0.5);
+      albedo *= 0.9 + 0.1 * step(0.5, fract(i.loc.x * 2.0));
+      let band = i.loc.y > i.dims.y - 2.2 && i.loc.y < i.dims.y - 1.4;
+      if (band) { albedo = select(vec3f(0.12, 0.25, 0.45), vec3f(0.55, 0.12, 0.08), fract(seed * 9.1) > 0.5); }
+      let along = select(i.loc.z, i.loc.x, abs(dot(n, rotY(vec3f(0.0, 0.0, 1.0), i.info.z))) > 0.7);
+      if (i.loc.y > 3.0 && i.loc.y < 7.5 && fract(along / 12.0) > 0.35 && fract(along / 12.0) < 0.65) { albedo = vec3f(0.30, 0.31, 0.32); }
+    }
+  } else if (i.dims.w > 0.5 && i.dims.w < 1.5) {
     // roof: terracotta tiles, a few grey ones
     albedo = select(vec3f(0.30, 0.12, 0.07), vec3f(0.17, 0.16, 0.16), fract(seed * 7.13) > 0.82);
     albedo *= 0.85 + 0.2 * step(0.5, fract(i.loc.x * 3.0)) * (1.0 - smoothstep(60.0, 300.0, distance(i.world, F.camPos.xyz)));
@@ -203,6 +219,6 @@ fn fsHouse(i: HOut) -> @location(0) vec4f {
   }
   let col = shadeTree(i.world, n, albedo, 0.85, 0.0);
   var o = tonemap(col, i.pos.xy);
-  o.a = clamp(floor(i.info.w) * 0.5, 0.0, 1.0);   // fade out at the edge of the house range
+  o.a = clamp(floor(abs(i.info.w)) * 0.5, 0.0, 1.0);   // fade out at the edge of the house range
   return o;
 }

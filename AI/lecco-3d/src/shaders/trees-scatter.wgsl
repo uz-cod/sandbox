@@ -53,7 +53,10 @@ fn plant(cellXZ: vec2f, cell: f32, near: bool) -> Tree {
   if (near) { h = heightAt(xz); } else { h = heightFast(xz); }
   let zw = zoneWeights(vec3f(xz.x, h, xz.y), nb, ns.z);
   let wu = waterUrban(xz);
-  let w = zw.x * (1.0 - zw.y) * (1.0 - zw.z) * (1.0 - smoothstep(0.15, 0.4, urbanWeight(vec3f(xz.x, h, xz.y), nb, wu.b)));
+  // towns have no forest, except their parks (scattered park trees)
+  let townW = urbanWeight(vec3f(xz.x, h, xz.y), nb, wu.b);
+  let park = parkWeight(xz) * smoothstep(0.1, 0.3, townW);
+  let w = max(zw.x * (1.0 - zw.y) * (1.0 - zw.z) * (1.0 - smoothstep(0.15, 0.4, townW)), park * 0.35);
   if (h2(cellXZ, 3.0) > w * 0.9) { return t; }
   if (wu.r > 0.2) { return t; }
   let ft = features(xz, true);
@@ -117,6 +120,32 @@ fn csHouses(@builtin(global_invocation_id) id: vec3u) {
   let wu = waterUrban(xz);
   if (wu.r > 0.05) { return; }
   let u = urbanWeight(vec3f(xz.x, h, xz.y), nb, wu.b);
+  if (parkWeight(xz) > 0.5) { return; }                                  // parks and fields stay open
+  let ind = industryWeight(xz, h, nb.y) * smoothstep(0.1, 0.4, u);
+  if (ind > 0.5) {
+    // industrial estate: one large shed per 4x4 block of cells
+    if (u32(cellXZ.x) % 4u != 0u || u32(cellXZ.y) % 4u != 0u) { return; }
+    let cxz = (cellXZ + 2.0) * HOUSE_CELL;
+    let ft2 = features(cxz, true);
+    if (ft2.padW > 0.0 || ft2.edge < 8.0) { return; }
+    let wu2 = waterUrban(cxz);
+    if (wu2.r > 0.02) { return; }
+    let hb = heightFast(cxz);
+    let Ls = mix(32.0, 52.0, h2(cellXZ, 21.0));
+    let Ws = mix(18.0, 34.0, h2(cellXZ, 22.0));
+    let Hs = mix(7.0, 12.0, h2(cellXZ, 23.0));
+    let cc = F.viewProj * vec4f(vec3f(cxz.x, hb + Hs * 0.5, cxz.y) - F.camPos.xyz, 1.0);
+    if (cc.w < -Ls || abs(cc.x) > cc.w * 1.05 + Ls * 1.8 || abs(cc.y) > cc.w * 1.05 + Ls * 1.8) { return; }
+    let k = atomicAdd(&args[13u], 1u);
+    if (k < HOUSE_MAX) {
+      var sh: Tree;
+      sh.pos = vec4f(cxz.x, hb - 3.0, cxz.y, Hs + 3.0);
+      // negative w marks a shed (flat roof, panel walls)
+      sh.info = vec4f(Ls, Ws, noise(cxz / 650.0) * 3.1416, -(h2(cellXZ, 24.0) + (1.0 - smoothstep(HOUSE_R - 600.0, HOUSE_R, d)) * 2.0 + 0.001));
+      trees[2u * NEAR_MAX + FAR_MAX + k] = sh;
+    }
+    return;
+  }
   if (h2(cellXZ, 13.0) > smoothstep(0.05, 0.6, u) * 0.95) { return; }   // dense in town, thinning at the edges
   let ft = features(xz, true);
   if (ft.padW > 0.0 || ft.edge < 5.0) { return; }

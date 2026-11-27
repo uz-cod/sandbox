@@ -333,6 +333,7 @@ export function bakeOsm({ quiet = false } = {}) {
           for (const nm of named) { const d = Math.hypot(nm.x - ex, nm.z - ez); if (d < best) { best = d; bn = nm.name; } }
           dest = bn || `quota ${Math.round(demBil(ex, ez))} m`;
         }
+        if (dest === self.name) continue;                                         // leads back into the same hub
         const via = r.touches.filter((t) => t.dist < 250 && (t.index - pt.index) * step > 0 && (end - t.index) * step >= 0).map((t) => t.peak);
         const h = len / 4000, v = dplus / 400 + dminus / 800;
         placeItineraries.push({ route: ri, place: pt.place, ref: r.ref, name: r.name, start: r.offset + pt.index, end: r.offset + end,

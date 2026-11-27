@@ -82,7 +82,8 @@ npm run shot -- "peak=2&hud=0"   # headless screenshots into shots/ (needs Playw
 - **Towns**: a built-up mask is baked from OSM town indicators (density of footways, steps,
   restaurants and hotels, ~400 m kernel, valley floors) and stored in the water texture; it drives
   instanced procedural houses (plaster walls, tile roofs, windows) within 4 km, from the same compute
-  pass as the trees, and a roofscape tint beyond. Individual buildings are not real ones.
+  pass as the trees, and a roofscape tint beyond; procedural parks (lawns, trees) and industrial
+  estates (flat-roof sheds) on the flattest, lowest ground. Individual buildings are not real ones.
 - **Startup GPU passes**: normals/curvature, soft sun shadows (heightfield ray march) and
   horizon-based AO over the crop + 6 km margin.
 - **Terrain**: 10 nested clipmap rings (128² cells, 2 m → 1 km spacing) with CDLOD-style
