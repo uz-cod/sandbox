@@ -24,12 +24,17 @@ const FADE1: f32 = 300.0;
 const NEAR_MAX: u32 = 30000u;         // per type
 const FAR_MAX: u32 = 200000u;
 const SINK: f32 = 0.45;
-const HOUSE_CELL: f32 = 16.0;
+const HOUSE_CELL: f32 = 14.0;
 const HOUSE_R: f32 = 4000.0;
-const HOUSE_SIDE: u32 = 500u;         // 2 * HOUSE_R / HOUSE_CELL
-const HOUSE_MAX: u32 = 60000u;               // the DSM already contains the canopy: plant trees partly "in" it
+const HOUSE_SIDE: u32 = 572u;         // 2 * HOUSE_R / HOUSE_CELL
+const HOUSE_MAX: u32 = 120000u;               // the DSM already contains the canopy: plant trees partly "in" it
 
 fn h2(c: vec2f, k: f32) -> f32 { return hash2(c * 1.37 + vec2f(k * 17.3, k * 5.1)) * 0.5 + 0.5; }
+fn waterUrban(xz: vec2f) -> vec3f {
+  let wuv = ((xz - F.terr.xy) / F.terr.z + 0.5) / F.terr.w;
+  if (any(wuv < vec2f(0.0)) || any(wuv > vec2f(1.0))) { return vec3f(0.0); }
+  return textureSampleLevel(waterTexT, linSampT, wuv, 0.0).rgb;
+}
 
 // Returns tree (pos, info) or pos.w < 0 if no tree in this cell.
 fn plant(cellXZ: vec2f, cell: f32, near: bool) -> Tree {
@@ -47,12 +52,10 @@ fn plant(cellXZ: vec2f, cell: f32, near: bool) -> Tree {
   var h: f32;
   if (near) { h = heightAt(xz); } else { h = heightFast(xz); }
   let zw = zoneWeights(vec3f(xz.x, h, xz.y), nb, ns.z);
-  let w = zw.x * (1.0 - zw.y) * (1.0 - zw.z) * (1.0 - smoothstep(0.15, 0.35, urbanWeight(vec3f(xz.x, h, xz.y), nb)));
+  let wu = waterUrban(xz);
+  let w = zw.x * (1.0 - zw.y) * (1.0 - zw.z) * (1.0 - smoothstep(0.15, 0.4, urbanWeight(vec3f(xz.x, h, xz.y), nb, wu.b)));
   if (h2(cellXZ, 3.0) > w * 0.9) { return t; }
-  let wuv = ((xz - F.terr.xy) / F.terr.z + 0.5) / F.terr.w;
-  if (all(wuv >= vec2f(0.0)) && all(wuv <= vec2f(1.0))) {
-    if (textureSampleLevel(waterTexT, linSampT, wuv, 0.0).r > 0.2) { return t; }
-  }
+  if (wu.r > 0.2) { return t; }
   let ft = features(xz, true);
   if (ft.padW > 0.0 || ft.edge < select(4.5, 2.2, near)) { return t; }
 
@@ -111,15 +114,13 @@ fn csHouses(@builtin(global_invocation_id) id: vec3u) {
   let ns = textureSampleLevel(normalTexT, linSampT, uv, 0.0);
   let nb = vec3f(ns.x, sqrt(max(0.0, 1.0 - ns.x * ns.x - ns.y * ns.y)), ns.y);
   let h = heightFast(xz);
-  let u = urbanWeight(vec3f(xz.x, h, xz.y), nb);
-  if (h2(cellXZ, 13.0) > u * u * 0.8) { return; }   // sparse at the edges of the towns
-  let wuv = ((xz - F.terr.xy) / F.terr.z + 0.5) / F.terr.w;
-  if (all(wuv >= vec2f(0.0)) && all(wuv <= vec2f(1.0))) {
-    if (textureSampleLevel(waterTexT, linSampT, wuv, 0.0).r > 0.05) { return; }
-  }
+  let wu = waterUrban(xz);
+  if (wu.r > 0.05) { return; }
+  let u = urbanWeight(vec3f(xz.x, h, xz.y), nb, wu.b);
+  if (h2(cellXZ, 13.0) > smoothstep(0.05, 0.6, u) * 0.95) { return; }   // dense in town, thinning at the edges
   let ft = features(xz, true);
   if (ft.padW > 0.0 || ft.edge < 5.0) { return; }
-  let lecco = exp(-dot(xz - LECCO_XZ, xz - LECCO_XZ) / (2.0 * 1500.0 * 1500.0));
+  let lecco = smoothstep(0.6, 1.0, u);                 // town centres: bigger, taller blocks
   let L = mix(8.0, 15.0, h2(cellXZ, 14.0)) * (1.0 + lecco * 0.5);
   let W = mix(6.0, 9.5, h2(cellXZ, 15.0));
   let floors = floor(mix(2.0, 3.99, h2(cellXZ, 16.0)) + lecco * h2(cellXZ, 17.0) * 3.0);
@@ -131,7 +132,7 @@ fn csHouses(@builtin(global_invocation_id) id: vec3u) {
   let sq = vec2f(xz.x * cos(a0) + xz.y * sin(a0), -xz.x * sin(a0) + xz.y * cos(a0));
   let st = fract(sq / vec2f(58.0, 74.0));
   if (min(min(st.x, 1.0 - st.x), min(st.y, 1.0 - st.y)) < 0.12) { return; }
-  if (noise(xz / 140.0 + 3.0) > 0.45) { return; }
+  if (noise(xz / 140.0 + 3.0) > 0.62) { return; }
   let c = F.viewProj * vec4f(vec3f(xz.x, h + H * 0.5, xz.y) - F.camPos.xyz, 1.0);
   let r = L;
   if (c.w < -r || abs(c.x) > c.w * 1.05 + r * 1.8 || abs(c.y) > c.w * 1.05 + r * 1.8) { return; }

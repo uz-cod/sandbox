@@ -10,7 +10,7 @@ export async function loadTerrain() {
   const payload = new Uint8Array(await new Response(stream).arrayBuffer());
   const N = meta.samples, NN = N * N;
   const heights = new Float32Array(NN);
-  const water = new Uint8Array(NN * 2); // rg8: water fraction, shore distance
+  const water = new Uint8Array(NN * 4); // rgba8: water fraction, shore distance, built-up, unused
   const q = new Uint16Array(NN);
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
@@ -20,8 +20,9 @@ export async function loadTerrain() {
       const v = (r + ((a + b - c) & 0xffff)) & 0xffff;
       q[s] = v;
       heights[s] = meta.hMin + v * meta.hScale;
-      water[s * 2] = payload[2 * NN + s];
-      water[s * 2 + 1] = payload[3 * NN + s];
+      water[s * 4] = payload[2 * NN + s];
+      water[s * 4 + 1] = payload[3 * NN + s];
+      water[s * 4 + 2] = payload[4 * NN + s];
     }
   }
   terrain.heights = heights;

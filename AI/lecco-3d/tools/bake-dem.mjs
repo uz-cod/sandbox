@@ -148,6 +148,44 @@ export function bake({ quiet = false } = {}) {
     log(`summits restored from OSM elevations: ${fixed} (largest: ${maxName} +${maxFix.toFixed(0)} m)`);
   }
 
+  // --- built-up mask: density of town footways / steps and restaurants / hotels (OSM),
+  // ~400 m kernel, kept to valley floors and lower slopes (stored in the water texture's B)
+  const urban = new Uint8Array(N * N);
+  if (existsSync(EXTRACT)) {
+    const ex = JSON.parse(readFileSync(EXTRACT, 'utf8'));
+    const den = new Float32Array(N * N);
+    const put = (lat, lon, w) => {
+      const [x, z] = toXZ(lat, lon);
+      const i = Math.round((x + HALF) / SP), j = Math.round((z + HALF) / SP);
+      if (i >= 0 && j >= 0 && i < N && j < N) den[j * N + i] += w;
+    };
+    for (const w of ex.ways) {
+      if (w.tags.highway !== 'footway' && w.tags.highway !== 'steps') continue;
+      for (let k = 2; k < w.c.length; k += 2) put((w.c[k] + w.c[k - 2]) / 2e6, (w.c[k + 1] + w.c[k - 1]) / 2e6, 1);
+    }
+    for (const [la, lo] of ex.pois || []) put(la / 1e6, lo / 1e6, 4);
+    // separable box blur twice (~ +-8 samples = 200 m each pass)
+    const R = 8, tmp = new Float32Array(N * N);
+    const blur = (src, dst, horiz) => {
+      for (let a2 = 0; a2 < N; a2++) {
+        let acc = 0;
+        for (let k = -R; k <= R; k++) { const b2 = Math.min(N - 1, Math.max(0, k)); acc += horiz ? src[a2 * N + b2] : src[b2 * N + a2]; }
+        for (let b2 = 0; b2 < N; b2++) {
+          dst[horiz ? a2 * N + b2 : b2 * N + a2] = acc;
+          const add = Math.min(N - 1, b2 + R + 1), rem = Math.max(0, b2 - R);
+          acc += (horiz ? src[a2 * N + add] - src[a2 * N + rem] : src[add * N + a2] - src[rem * N + a2]);
+        }
+      }
+    };
+    blur(den, tmp, true); blur(tmp, den, false); blur(den, tmp, true); blur(tmp, den, false);
+    for (let s = 0; s < N * N; s++) {
+      const low = Math.min(1, Math.max(0, (650 - H[s]) / 120));
+      urban[s] = Math.round(255 * Math.min(1, Math.max(0, (den[s] - 3) / 25)) * low);
+    }
+    let cov = 0; for (let s = 0; s < N * N; s++) if (urban[s] > 128) cov++;
+    log(`built-up mask: ${((cov * SP * SP) / 1e6).toFixed(1)} km² (from ${(ex.pois || []).length} restaurants/hotels + town footways)`);
+  }
+
   // --- distance from shore inside water (chamfer 3-4, in samples) ---
   const dist = new Float32Array(N * N);
   for (let s = 0; s < N * N; s++) dist[s] = water[s] >= 128 ? 1e9 : 0;
@@ -190,7 +228,7 @@ export function bake({ quiet = false } = {}) {
   const scale = (hMax - hMin) / 65535;
   const Q = new Uint16Array(N * N);
   for (let s = 0; s < N * N; s++) Q[s] = Math.round((H[s] - hMin) / scale);
-  const payload = new Uint8Array(N * N * 4);
+  const payload = new Uint8Array(N * N * 5);
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const s = j * N + i;
     const a = i > 0 ? Q[s - 1] : 0, b = j > 0 ? Q[s - N] : 0, c = i > 0 && j > 0 ? Q[s - N - 1] : 0;
@@ -200,6 +238,7 @@ export function bake({ quiet = false } = {}) {
   }
   payload.set(water, 2 * N * N);
   payload.set(shore, 3 * N * N);
+  payload.set(urban, 4 * N * N);
   const bin = deflateRawSync(payload, { level: 9, memLevel: 9 });
 
   const meta = {

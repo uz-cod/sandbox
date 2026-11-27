@@ -35,7 +35,7 @@ const KEEP_WAY_TAGS = ['highway', 'sac_scale', 'trail_visibility', 'tracktype', 
 const r6 = (v) => Math.round(v * 1e6);
 
 function extract(osm) {
-  const ways = [], routes = [], huts = [], crosses = [], peaks = [];
+  const ways = [], routes = [], huts = [], crosses = [], peaks = [], pois = [];
   for (const e of osm.elements) {
     const t = e.tags || {};
     if (e.type === 'way' && TRAIL.test(t.highway || '') && e.geometry) {
@@ -60,9 +60,15 @@ function extract(osm) {
     if (e.type === 'node' && (t['summit:cross'] === 'yes' || t.man_made === 'cross')) {
       crosses.push({ id: e.id, name: t.name || '', summit: t['summit:cross'] === 'yes' || t.natural === 'peak', material: t.material || '', structure: t.structure || '', lat: r6(e.lat), lon: r6(e.lon) });
     }
+    // town indicators for the built-up mask (with footways and steps)
+    if (t.amenity === 'restaurant' || t.tourism === 'hotel' || t.tourism === 'guest_house') {
+      const lat = e.type === 'node' ? e.lat : e.bounds ? (e.bounds.minlat + e.bounds.maxlat) / 2 : null;
+      const lon = e.type === 'node' ? e.lon : e.bounds ? (e.bounds.minlon + e.bounds.maxlon) / 2 : null;
+      if (lat != null) pois.push([r6(lat), r6(lon)]);
+    }
     if (e.type === 'node' && t.natural === 'peak' && t.name) peaks.push({ id: e.id, name: t.name, ele: Number(t.ele) || 0, lat: r6(e.lat), lon: r6(e.lon) });
   }
-  return { source: 'OpenStreetMap via Overpass API', license: 'ODbL 1.0, © OpenStreetMap contributors', timestamp: osm.osm3s?.timestamp_osm_base, ways, routes, huts, crosses, peaks };
+  return { source: 'OpenStreetMap via Overpass API', license: 'ODbL 1.0, © OpenStreetMap contributors', timestamp: osm.osm3s?.timestamp_osm_base, ways, routes, huts, crosses, peaks, pois };
 }
 
 if (!process.argv.includes('--offline') || !existsSync(RAW)) await download();

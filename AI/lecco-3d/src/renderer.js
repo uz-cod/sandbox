@@ -20,7 +20,7 @@ const MARGIN = 6000;             // precomputed region extends this far beyond t
 const SAMPLES = 4;
 const FOV_Y = (60 * Math.PI) / 180;
 const NEAR = 0.5;
-const TREE_NEAR_MAX = 30000, TREE_FAR_MAX = 200000, HOUSE_MAX = 60000, TREE_STRIDE = 32;   // must match trees-scatter.wgsl
+const TREE_NEAR_MAX = 30000, TREE_FAR_MAX = 200000, HOUSE_MAX = 120000, TREE_STRIDE = 32;   // must match trees-scatter.wgsl
 
 // Frame uniform layout (floats), see struct Frame in common.wgsl
 const U_VIEWPROJ = 0, U_INVVP = 16, U_CAM = 32, U_SUN = 36, U_SUNCOL = 40, U_TERR = 44, U_EXT = 48, U_SCREEN = 52, U_FOG = 56, U_MISC = 60, U_GRID = 64, U_CLOUDS = 68;
@@ -43,8 +43,8 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   // ---------------------------------------------------------------- data textures
   const heightTex = device.createTexture({ size: [N, N], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
   device.queue.writeTexture({ texture: heightTex }, heights, { bytesPerRow: N * 4 }, [N, N]);
-  const waterTex = device.createTexture({ size: [N, N], format: 'rg8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
-  device.queue.writeTexture({ texture: waterTex }, water, { bytesPerRow: N * 2 }, [N, N]);
+  const waterTex = device.createTexture({ size: [N, N], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+  device.queue.writeTexture({ texture: waterTex }, water, { bytesPerRow: N * 4 }, [N, N]);
   const PRE = opts.precomputeSize;
   const normalTex = device.createTexture({ size: [PRE, PRE], format: 'rgba16float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING });
   const shadeTex = device.createTexture({ size: [PRE, PRE], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING });
@@ -378,7 +378,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       cp.setBindGroup(0, scatterBG);
       cp.setPipeline(csNear); cp.dispatchWorkgroups(19, 19);   // 150 / 8
       cp.setPipeline(csFar); cp.dispatchWorkgroups(57, 57);    // 450 / 8
-      cp.setPipeline(csHouses); cp.dispatchWorkgroups(63, 63); // 500 / 8
+      cp.setPipeline(csHouses); cp.dispatchWorkgroups(72, 72); // 572 / 8
       cp.setPipeline(csClamp); cp.dispatchWorkgroups(1);
       cp.end();
     }
