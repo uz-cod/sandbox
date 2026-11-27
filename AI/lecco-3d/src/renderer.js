@@ -24,7 +24,7 @@ const NEAR = 0.5;
 const TREE_NEAR_MAX = 30000, TREE_FAR_MAX = 200000, HOUSE_MAX = 120000, TREE_STRIDE = 32;   // must match trees-scatter.wgsl
 
 // Frame uniform layout (floats), see struct Frame in common.wgsl
-const U_VIEWPROJ = 0, U_INVVP = 16, U_CAM = 32, U_SUN = 36, U_SUNCOL = 40, U_TERR = 44, U_EXT = 48, U_SCREEN = 52, U_FOG = 56, U_MISC = 60, U_GRID = 64, U_CLOUDS = 68, U_SEL = 72;
+const U_VIEWPROJ = 0, U_INVVP = 16, U_CAM = 32, U_SUN = 36, U_SUNCOL = 40, U_TERR = 44, U_EXT = 48, U_SCREEN = 52, U_FOG = 56, U_MISC = 60, U_GRID = 64, U_CLOUDS = 68, U_SEL = 72, U_SEASON = 76;
 
 export async function createRenderer(canvas, { heights, water, land }, osm, opts) {
   if (!navigator.gpu) throw new Error('WebGPU non disponibile in questo browser.');
@@ -54,7 +54,7 @@ export async function createRenderer(canvas, { heights, water, land }, osm, opts
   const linSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
 
   // ---------------------------------------------------------------- uniforms
-  const frame = new Float32Array(76);
+  const frame = new Float32Array(80);
   const frameBuf = device.createBuffer({ size: frame.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const levelData = new Float32Array(LEVELS * 8);
   const levelBuf = device.createBuffer({ size: levelData.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -177,12 +177,13 @@ export async function createRenderer(canvas, { heights, water, land }, osm, opts
     pass.end();
     device.queue.submit([enc.finish()]);
     await device.queue.onSubmittedWorkDone();
+    return { pipe, bg };
   };
   const tPre = performance.now();
   opts.onProgress?.('Normali del terreno…');
   await runCompute(normalsMod, 'csNormals', normalsLayout, normalTex);
   opts.onProgress?.('Ombre e occlusione ambientale…');
-  await runCompute(shadeMod, 'csShade', shadeLayout, shadeTex);
+  const shadeJob = await runCompute(shadeMod, 'csShade', shadeLayout, shadeTex);
   const precomputeMs = performance.now() - tPre;
 
   // ---------------------------------------------------------------- render pipelines
@@ -475,10 +476,29 @@ export async function createRenderer(canvas, { heights, water, land }, osm, opts
 
   // selected summit bit mask: highlights its itineraries and shows its trailhead pins
   function setSelection(mask) { frame[U_MISC + 3] = mask; }
+  // Sun from azimuth (deg, clockwise from north) / elevation (deg): colour and exposure follow the
+  // elevation, and the terrain shadow / AO pass is re-run (a few ms on a real GPU).
+  function setSun(azDeg, elDeg) {
+    const az = (azDeg * Math.PI) / 180, el = (Math.max(1.0, elDeg) * Math.PI) / 180;
+    frame[U_SUN] = Math.sin(az) * Math.cos(el); frame[U_SUN + 1] = Math.sin(el); frame[U_SUN + 2] = -Math.cos(az) * Math.cos(el);
+    const s = Math.sin(el), warm = 1 - Math.min(1, s / 0.45);          // 0 high sun .. 1 on the horizon
+    const I = 3.3 * Math.min(1, 0.35 + s * 1.6);
+    frame[U_SUNCOL] = I * 1.0; frame[U_SUNCOL + 1] = I * (0.94 - 0.30 * warm); frame[U_SUNCOL + 2] = I * (0.84 - 0.50 * warm);
+    frame[U_FOG + 2] = opts.exposure * (1 + 0.3 * warm);
+    device.queue.writeBuffer(frameBuf, 0, frame);
+    const enc = device.createCommandEncoder();
+    const cp = enc.beginComputePass();
+    cp.setPipeline(shadeJob.pipe); cp.setBindGroup(0, shadeJob.bg);
+    cp.dispatchWorkgroups(Math.ceil(PRE / 8), Math.ceil(PRE / 8));
+    cp.end();
+    device.queue.submit([enc.finish()]);
+  }
+  // season: (autumn foliage 0..1, winter bareness 0..1, meadow dryness 0..1, snow on trees 0..1) + snow line
+  function setSeason(s) { frame.set([s.autumn, s.winter, s.dry, s.treeSnow], U_SEASON); frame[U_MISC] = s.snow; }
   function setTrees(on) { treesOn = on; }
   function setClouds(cov) { frame[U_CLOUDS + 2] = cov; }
   function setItinerary(a, b) { frame[U_SEL] = a; frame[U_SEL + 1] = b; }
   function setCursor(x, z) { frame[U_SEL + 2] = x; frame[U_SEL + 3] = z; }
 
-  return { device, resize, render, capture, setSelection, setTrees, setClouds, setItinerary, setCursor, viewProj: vp, precomputeMs, adapterInfo: adapter.info };
+  return { device, resize, render, capture, setSelection, setSun, setSeason, setTrees, setClouds, setItinerary, setCursor, viewProj: vp, precomputeMs, adapterInfo: adapter.info };
 }

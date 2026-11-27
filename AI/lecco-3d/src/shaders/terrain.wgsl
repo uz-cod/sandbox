@@ -116,7 +116,8 @@ fn material(p: vec3f, nb: vec3f, n: vec3f, curv: f32, relief: f32, dist: f32) ->
   let dry = smoothstep(-0.1, 0.6, noise(p.xz / 14.0) * 0.6 + n2 * 0.4 + smoothstep(1300.0, 1900.0, h) * 0.4 - northness * 0.2);
   let lush = mix(vec3f(0.09, 0.125, 0.045), vec3f(0.125, 0.15, 0.06), n2 * 0.5 + 0.5);
   let dried = vec3f(0.15, 0.145, 0.075);
-  var grass = mix(lush, dried, dry * 0.5);
+  var grass = mix(lush, dried, clamp(dry * 0.5 + F.season.z * 0.55, 0.0, 1.0));
+  grass = mix(grass, vec3f(0.17, 0.15, 0.10), F.season.y * 0.6);              // winter: faded meadows
   grass *= 0.8 + 0.22 * n4 + 0.25 * n5 + 0.15 * noise(p.xz / 3.1) * mid;
 
   // --- forest canopy (DSM already includes tree height): crowns with dark gaps
@@ -125,6 +126,11 @@ fn material(p: vec3f, nb: vec3f, n: vec3f, curv: f32, relief: f32, dist: f32) ->
   let forestTone = noise(p.xz / 23.0) * 0.5 + 0.5;
   var forest = mix(vec3f(0.020, 0.036, 0.015), vec3f(0.045, 0.060, 0.024), forestTone);
   forest = mix(forest, vec3f(0.040, 0.042, 0.022), smoothstep(0.2, 0.7, n1) * 0.5);   // conifer / beech mix
+  // seasons: broadleaf share turns orange / brown in autumn, bare grey-brown in winter
+  let broad = 1.0 - smoothstep(0.35, 0.55, coniferShare(p.xz, h, northness));
+  let autumnCol = mix(vec3f(0.30, 0.12, 0.03), vec3f(0.36, 0.22, 0.05), noise(p.xz / 37.0) * 0.5 + 0.5);
+  forest = mix(forest, autumnCol * 0.75, broad * F.season.x * smoothstep(-0.2, 0.3, noise(p.xz / 120.0) + 0.3));
+  forest = mix(forest, vec3f(0.12, 0.10, 0.085), broad * F.season.y);
   forest *= mix(0.25, 1.2, gap);
 
   // --- weights
@@ -299,7 +305,7 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4f {
     let R = reflect(-V, wn);
     let cosV = max(dot(wn, V), 0.0);
     let fres = 0.02 + 0.98 * pow(1.0 - cosV, 5.0);
-    var refl = skyRadiance(vec3f(R.x, abs(R.y), R.z));
+    var refl = skyRadiance(vec3f(R.x, max(abs(R.y), 0.06), R.z)) * mix(0.8, 1.0, smoothstep(0.05, 0.4, Ls.y));   // grazing glare tamed at low sun
     // the surrounding mountains darken the reflection near the shore (no true reflection yet)
     refl *= mix(0.55, 1.0, smoothstep(0.0, 0.5, w.g)) * mix(0.6, 1.0, skyView);
     let deep = vec3f(0.006, 0.020, 0.026);

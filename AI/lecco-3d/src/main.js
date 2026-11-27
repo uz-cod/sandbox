@@ -243,6 +243,109 @@ function drawProfile() {
   svg.onmouseleave = () => { $('profCur').style.display = 'none'; renderer.setCursor(1e9, 1e9); };
 }
 
+// ------------------------------------------------------------------ light: time of day and seasons
+// Solar position for Lecco (45.88 N, 9.40 E) on a representative day of each season.
+const LAT = (45.88 * Math.PI) / 180;
+const SEASONS = {
+  primavera: { label: 'Primavera', decl: 12, autumn: 0, winter: 0, dry: 0, treeSnow: 0, snow: 2000, dst: 1 },
+  estate: { label: 'Estate', decl: 20.5, autumn: 0, winter: 0, dry: 0.6, treeSnow: 0, snow: 2750, dst: 1 },
+  autunno: { label: 'Autunno', decl: -11, autumn: 1, winter: 0, dry: 0.35, treeSnow: 0, snow: 2300, dst: 1 },
+  inverno: { label: 'Inverno', decl: -20, autumn: 0, winter: 1, dry: 0.15, treeSnow: 0.85, snow: 1150, dst: 0 },
+};
+const light = { season: params.get('season') || 'primavera', t: params.has('tod') ? Number(params.get('tod')) : 0.68 };
+function sunFor(season, t) {
+  const d = (SEASONS[season].decl * Math.PI) / 180;
+  const H0 = Math.acos(-Math.tan(LAT) * Math.tan(d)) * 0.94;            // a little after sunrise .. before sunset
+  const H = -H0 + t * 2 * H0;
+  const el = Math.asin(Math.sin(LAT) * Math.sin(d) + Math.cos(LAT) * Math.cos(d) * Math.cos(H));
+  const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(LAT) - Math.tan(d) * Math.cos(LAT)) + Math.PI;
+  const clock = 12 + (H * 180) / Math.PI / 15 + (15 - 9.40) / 15 + SEASONS[season].dst;   // CET / CEST
+  return { az: (az * 180) / Math.PI, el: (el * 180) / Math.PI, clock };
+}
+function applyLight() {
+  const s = SEASONS[light.season];
+  const sun = sunFor(light.season, light.t);
+  renderer.setSun(sun.az, sun.el);
+  renderer.setSeason(s);
+  const hh = Math.floor(sun.clock), mm = Math.round((sun.clock - hh) * 60);
+  $('todLabel').textContent = `${hh}:${String(mm % 60).padStart(2, '0')} · sole ${Math.max(1, Math.round(sun.el))}°`;
+  document.querySelectorAll('#seasons button').forEach((b) => b.classList.toggle('on', b.dataset.s === light.season));
+}
+function buildLight() {
+  const box = $('seasons');
+  for (const [k, s] of Object.entries(SEASONS)) {
+    const b = document.createElement('button');
+    b.textContent = s.label; b.dataset.s = k;
+    b.addEventListener('click', (e) => { e.stopPropagation(); light.season = k; applyLight(); b.blur(); });
+    box.appendChild(b);
+  }
+  const r = $('tod');
+  r.value = String(Math.round(light.t * 1000));
+  let pending = false;
+  r.addEventListener('input', () => {
+    light.t = Number(r.value) / 1000;
+    if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; applyLight(); }); }
+  });
+  r.addEventListener('keydown', (e) => e.stopPropagation());
+  applyLight();
+}
+
+// ------------------------------------------------------------------ panorama: names of the visible summits
+// Line-of-sight test against the terrain, priority order (start summits, crosses, height), no overlaps.
+let peakLbls = [], showPeakNames = true;
+function buildPeakLabels() {
+  const layer = $('peakNames');
+  peakLbls = (osmMeta.peakLabels || []).map(([x, z, ele, pri, name]) => {
+    const el = document.createElement('div');
+    el.className = 'pk';
+    el.innerHTML = `<b>${esc(name)}</b> ${Math.round(ele)}`;
+    el.style.display = 'none';
+    layer.appendChild(el);
+    return { x, z, y: groundHeight(x, z), el, shown: false };
+  });
+}
+const placed = [];
+function updatePeakLabels(vp, cam, w, h) {
+  placed.length = 0;
+  let count = 0;
+  for (const p of peakLbls) {
+    let vis = false;
+    if (showPeakNames && count < 28) {
+      const dx = p.x - cam.x, dz = p.z - cam.z, dy = p.y - cam.y, d = Math.hypot(dx, dz);
+      if (d > 120 && d < 26000) {
+        const top = p.y + 2;
+        const X = dx, Y = top - cam.y, Z = dz;
+        const cw = vp[3] * X + vp[7] * Y + vp[11] * Z + vp[15];
+        if (cw > 1) {
+          const sx = ((vp[0] * X + vp[4] * Y + vp[8] * Z + vp[12]) / cw * 0.5 + 0.5) * w;
+          const sy = (0.5 - (vp[1] * X + vp[5] * Y + vp[9] * Z + vp[13]) / cw * 0.5) * h;
+          if (sx > 20 && sx < w - 20 && sy > 30 && sy < h - 10) {
+            // line of sight: terrain must stay below the eye-to-summit line
+            let free = true;
+            const steps = Math.min(60, Math.max(8, Math.round(d / 150)));
+            for (let k = 1; k < steps - 1 && free; k++) {
+              const t = k / steps;
+              if (groundHeight(cam.x + dx * t, cam.z + dz * t) > cam.y + (top - cam.y) * t + 4) free = false;
+            }
+            if (free) {
+              const bw = p.el.offsetWidth || 90;
+              let clash = false;
+              for (let q = 0; q < placed.length && !clash; q += 2) if (Math.abs(placed[q] - sx) < (bw + 70) * 0.5 && Math.abs(placed[q + 1] - sy) < 22) clash = true;
+              if (!clash) {
+                placed.push(sx, sy);
+                p.el.style.transform = `translate(${sx.toFixed(0)}px, ${sy.toFixed(0)}px) translate(-50%, -100%)`;
+                p.el.style.opacity = d > 15000 ? '0.7' : '1';
+                vis = true; count++;
+              }
+            }
+          }
+        }
+      }
+    }
+    if (vis !== p.shown) { p.el.style.display = vis ? '' : 'none'; p.shown = vis; }
+  }
+}
+
 // Camera views
 function flyToTrailhead(t, p) {
   endFollow();
@@ -438,6 +541,7 @@ function buildUI() {
     if (k >= 0 && k < peaks.length) gotoPeak(k);
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
     if (e.code === 'KeyV' && activePeak >= 0) overview(activePeak);
+    if (e.code === 'KeyL') { showPeakNames = !showPeakNames; toast(showPeakNames ? 'Nomi delle cime visibili' : 'Nomi delle cime nascosti'); }
     if (e.code === 'Escape' && profile && !follow.active) clearItinerary();
     if (e.code === 'KeyP' && !follow.active) { if (auto.mode) stopAuto(); else startPanorama(); }
     if (e.code === 'KeyN') {
@@ -459,6 +563,7 @@ function buildUI() {
   buildHutSearch();
   buildSpeed();
   $('profClose').addEventListener('click', (e) => { e.stopPropagation(); clearItinerary(); });
+  buildPeakLabels();
 }
 
 async function main() {
@@ -479,6 +584,7 @@ async function main() {
     window.addEventListener('resize', fit);
 
     buildUI();
+    buildLight();
     attachInput(canvas);
     const start = params.get('peak');
     const camParam = params.get('cam');
@@ -549,6 +655,7 @@ async function main() {
       snap.getContext('2d').putImageData(img, 0, 0);
       canvas.after(snap);
       updateLabels(renderer.viewProj, camera, canvas.clientWidth, canvas.clientHeight);
+      updatePeakLabels(renderer.viewProj, camera, canvas.clientWidth, canvas.clientHeight);
       toLatLon(camera.x, camera.z, ll);
       hudAlt.textContent = Math.round(camera.y); hudAgl.textContent = Math.round(camera.agl);
       hudPos.textContent = `${ll[0].toFixed(5)}N ${ll[1].toFixed(5)}E`;
@@ -556,7 +663,10 @@ async function main() {
       window.__ready = true;
       return;
     }
-    const lblTimer = () => updateLabels(renderer.viewProj, camera, canvas.clientWidth, canvas.clientHeight);
+    const lblTimer = () => {
+      updateLabels(renderer.viewProj, camera, canvas.clientWidth, canvas.clientHeight);
+      updatePeakLabels(renderer.viewProj, camera, canvas.clientWidth, canvas.clientHeight);
+    };
     setInterval(lblTimer, 60);
     requestAnimationFrame(tick);
   } catch (err) {

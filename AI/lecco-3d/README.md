@@ -24,6 +24,8 @@ No server needed.
 | / | search huts and bivouacs by name, Enter flies there |
 | (on a trail) 2–12 km/h · +/− | walking pace |
 | B | forests on/off |
+| L | summit names on/off (visible summits only, line-of-sight tested, no overlaps) |
+| Luce panel | season (spring / summer / autumn / winter: snow line, beech colours, bare trees, snow on crowns) and time of day from sunrise to sunset (solar position for Lecco, shadows recomputed) |
 | N | clouds: clear → few → half (a new random sky every load; `clouds=0..1`, `seed=` in the URL) |
 | (on a trail) Space · W/S · Shift · F | pause/resume · forward/back · run · leave the trail |
 | H | hide the interface |
@@ -112,6 +114,13 @@ names to name itinerary destinations.
 - Huts are generic (footprint, size and type from OSM); the Magnodeno ones will get a dedicated
   model from photos.
 - Summit positions start from the OSM peak nodes and are snapped to the DEM maximum.
+
+## Next steps
+
+- Rivers and streams (Adda between the lakes, Gerenzone, Caldone, Bione, Pioverna…) from OSM
+  waterways: needs `waterway=river|stream` added to the Overpass Turbo export.
+- Lake reflections of the mountains, OSM road network, shareable view links, GPX export,
+  touch controls, wider horizon ring (tiles N46 E009, N45 E008, N46 E008).
 
 ## Data attribution
 

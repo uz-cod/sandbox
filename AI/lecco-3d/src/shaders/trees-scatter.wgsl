@@ -69,7 +69,7 @@ fn plant(cellXZ: vec2f, cell: f32, near: bool) -> Tree {
   if (ft.padW > 0.0 || ft.edge < select(4.5, 2.2, near)) { return t; }
 
   // species and size: conifers higher up and on north slopes
-  let pc = smoothstep(850.0, 1450.0, h) * 0.75 + (-nb.z) * 0.2 + (h2(cellXZ, 4.0) - 0.5) * 0.5 + noise(xz / 180.0) * 0.25;
+  let pc = coniferShare(xz, h, -nb.z) + (h2(cellXZ, 4.0) - 0.5) * 0.5;
   let conifer = select(0.0, 1.0, pc > 0.45);
   let hl = 1.0 - 0.45 * smoothstep(1250.0, 1600.0, h);           // smaller near the tree line
   var H = mix(13.0, 24.0, h2(cellXZ, 5.0)) * (0.65 + 0.35 * w) * hl;

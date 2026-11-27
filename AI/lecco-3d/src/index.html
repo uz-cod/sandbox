@@ -87,6 +87,21 @@
   #profSvg .cur { stroke: #ffd24d; } #profSvg .curp { fill: #ffd24d; } #profSvg .curt { fill: #ffd24d; font-weight: 600; }
   #profStats { font: 11.5px ui-monospace, monospace; color: var(--dim); margin-top: 2px; }
   body.nohud #profile { display: none; }
+  #peakNames { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .pk { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 11.5px; color: rgba(255,255,255,.88);
+    text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 6px rgba(0,0,0,.6); padding-bottom: 14px; }
+  .pk b { font-weight: 600; color: #fff; }
+  .pk::after { content: ''; position: absolute; left: 50%; bottom: 0; width: 1px; height: 12px; background: rgba(255,255,255,.75); }
+  body.nohud #peakNames { display: none; }
+  #light { top: 96px; right: 16px; width: 250px; padding: 8px 10px; }
+  #seasons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin-bottom: 6px; }
+  #seasons button { all: unset; cursor: pointer; text-align: center; font-size: 11px; padding: 3px 0; border-radius: 5px;
+    color: var(--dim); border: 1px solid rgba(255,255,255,.14); }
+  #seasons button.on { background: var(--acc); color: #111; border-color: var(--acc); }
+  #tod { width: 100%; accent-color: #ffb24d; margin: 2px 0; }
+  #light .tl { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--dim); }
+  #light #todLabel { color: var(--fg); font-variant-numeric: tabular-nums; }
+  @media (max-width: 640px) { #light { top: auto; bottom: 120px; } }
   #toast { position: fixed; top: 18px; left: 50%; transform: translate(-50%, -8px); opacity: 0; transition: .25s;
     background: rgba(14,18,22,.8); padding: 6px 14px; border-radius: 8px; font-size: 13px; pointer-events: none; }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -115,6 +130,7 @@
 </head>
 <body>
 <canvas id="gpu" tabindex="0"></canvas>
+<div id="peakNames"></div>
 <div id="labels"></div>
 <div id="status">Caricamento…</div>
 <div id="ui" class="panel">
@@ -135,6 +151,11 @@
   <div class="spd">passo <span id="speed"></span> km/h</div>
   <div class="k"><kbd>Spazio</kbd> pausa · <kbd>W</kbd>/<kbd>S</kbd> avanti/indietro · <kbd>+</kbd>/<kbd>−</kbd> passo · <kbd>Shift</kbd> ×3 · mouse guarda · <kbd>F</kbd> esci</div>
 </div>
+<div id="light" class="panel">
+  <div id="seasons"></div>
+  <input id="tod" type="range" min="0" max="1000" step="1" aria-label="Ora del giorno">
+  <div class="tl"><span>alba</span><span id="todLabel"></span><span>tramonto</span></div>
+</div>
 <div id="hud" class="panel">
   quota <b id="alt">–</b> m · suolo +<b id="agl">–</b> m<br>
   <span id="pos">–</span><br>
@@ -142,7 +163,7 @@
 </div>
 <div id="help" class="panel">
   <kbd>Click</kbd> cattura mouse (<kbd>Esc</kbd> rilascia) · <kbd>W A S D</kbd> muovi · <kbd>E</kbd>/<kbd>Q</kbd> su/giù ·
-  <kbd>Shift</kbd> veloce · <kbd>Alt</kbd> lento · rotella: velocità · <kbd>1–9</kbd> vette · <kbd>V</kbd> vista d'insieme · <kbd>P</kbd> panorama · <kbd>B</kbd> boschi · <kbd>N</kbd> nuvole · <kbd>H</kbd> nascondi interfaccia
+  <kbd>Shift</kbd> veloce · <kbd>Alt</kbd> lento · rotella: velocità · <kbd>1–9</kbd> vette · <kbd>V</kbd> vista d'insieme · <kbd>P</kbd> panorama · <kbd>B</kbd> boschi · <kbd>N</kbd> nuvole · <kbd>L</kbd> nomi cime · <kbd>H</kbd> nascondi interfaccia
 </div>
 <div id="profile" class="panel" hidden>
   <div class="ph"><div id="profTitle"></div><button id="profClose" title="Chiudi (Esc)">×</button></div>

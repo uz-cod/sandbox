@@ -404,6 +404,21 @@ export function bakeOsm({ quiet = false } = {}) {
   const meta = {
     quant: { origin: Q0, scale: QS }, ways: nW, trailPoints: nT, routePoints: nR, classes: CLASSES,
     routes, huts, crosses, itineraries, trailheads, placeItineraries, bridges, aerial, timestamp: ex.timestamp,
+    // named summits for the panorama labels: [x, z, ele, priority, name]; priority favours the start
+    // summits, then summits with a cross / wiki article / marked routes, then height
+    peakLabels: (() => {
+      const crossNear = (x, z) => crosses.some((c) => c.summit && Math.hypot(c.x - x, c.z - z) < 120);
+      const out = [];
+      for (const p of ex.peaks) {
+        if (!p.ele) continue;
+        const [x, z] = toXZ(p.lat / 1e6, p.lon / 1e6);
+        if (!inCrop(x, z, -50)) continue;
+        const start = PEAKS.some((q) => { const [qx, qz] = toXZ(q.lat, q.lon); return Math.hypot(qx - x, qz - z) < 60; });
+        const pri = (start ? 5000 : 0) + (crossNear(x, z) ? 600 : 0) + p.ele;
+        out.push([+x.toFixed(1), +z.toFixed(1), p.ele, Math.round(pri), p.name]);
+      }
+      return out.sort((a2, b2) => b2[3] - a2[3]);
+    })(),
     attribution: 'Sentieri, rifugi e croci © OpenStreetMap contributors (ODbL)',
   };
   mkdirSync(OUT_DIR, { recursive: true });

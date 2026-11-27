@@ -11,8 +11,16 @@ fn rotY(v: vec3f, a: f32) -> vec3f {
 
 fn foliageColor(info: vec4f) -> vec3f {
   if (info.x > 0.5) { return mix(vec3f(0.014, 0.030, 0.020), vec3f(0.028, 0.046, 0.028), info.y); }   // spruce / fir
-  return mix(vec3f(0.026, 0.050, 0.016), vec3f(0.056, 0.078, 0.024), info.y);                          // beech / chestnut
+  var c = mix(vec3f(0.026, 0.050, 0.016), vec3f(0.056, 0.078, 0.024), info.y);                         // beech / chestnut
+  // autumn: yellow-orange-red beeches (a few late ones stay green); winter: bare twigs
+  let late = step(0.82, fract(info.y * 13.7));
+  let autumnCol = mix(vec3f(0.40, 0.14, 0.03), vec3f(0.42, 0.30, 0.05), fract(info.y * 5.3));
+  c = mix(c, autumnCol, F.season.x * (1.0 - late));
+  c = mix(c, vec3f(0.10, 0.085, 0.07), F.season.y);
+  return c;
 }
+// snow lying on the upper faces of crowns (winter)
+fn treeSnow(n: vec3f, c: vec3f) -> vec3f { return mix(c, vec3f(0.72, 0.75, 0.80), F.season.w * smoothstep(0.35, 0.8, n.y)); }
 
 fn shadeTree(world: vec3f, n: vec3f, albedo: vec3f, ao: f32, foliage: f32) -> vec3f {
   let L = F.sunDir.xyz;
@@ -74,7 +82,7 @@ fn fsTreeMesh(i: MOut) -> @location(0) vec4f {
     let nn = vec3f(noise(q.xz), noise(q.zy + 3.1), noise(q.xy + 7.7));
     n = normalize(n + nn * 0.4);
     let clump = noise(q.xz * 0.6 + q.y) * 0.6 + noise(q.zy * 1.9) * 0.4;
-    albedo = foliageColor(i.info) * (0.6 + 0.6 * smoothstep(-0.6, 0.6, clump));
+    albedo = treeSnow(n, foliageColor(i.info) * (0.6 + 0.6 * smoothstep(-0.6, 0.6, clump)));
     ao = mix(0.3, 1.0, smoothstep(0.15, 0.95, i.lp.y)) * (0.55 + 0.45 * smoothstep(-0.5, 0.5, clump));
   } else {
     albedo = select(vec3f(0.24, 0.23, 0.21), vec3f(0.15, 0.10, 0.07), i.info.x > 0.5);
@@ -142,7 +150,7 @@ fn fsTreeBB(i: BOut) -> @location(0) vec4f {
   if (!inside && !trunk) { discard; }
   let nz = sqrt(max(0.0, 1.0 - nx * nx * 0.6 - ny * ny * 0.6));
   var n = normalize(i.right * nx * 0.8 + vec3f(0.0, 1.0, 0.0) * (ny * 0.6 + 0.3) + i.toCam * nz);
-  var albedo = foliageColor(i.info) * (0.8 + 0.4 * noise(i.uv * 7.0 + i.info.y * 3.0));
+  var albedo = treeSnow(n, foliageColor(i.info) * (0.8 + 0.4 * noise(i.uv * 7.0 + i.info.y * 3.0)));
   var ao = mix(0.45, 1.0, smoothstep(0.1, 0.9, y));
   var fol = 1.0;
   if (!inside) { albedo = vec3f(0.18, 0.15, 0.12); ao = 0.5; fol = 0.0; n = i.toCam; }

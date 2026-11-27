@@ -15,6 +15,7 @@ struct Frame {
   grid: vec4f,           // OSM feature grid: origin x, origin z, cell size, cells per side
   clouds: vec4f,         // random offset x, z, coverage (0 = clear), unused
   sel: vec4f,            // selected itinerary segment range [x, y), profile cursor x, z
+  season: vec4f,         // autumn foliage, winter bareness, meadow dryness, snow on trees (0..1)
 };
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -141,6 +142,9 @@ fn skyRadiance(d: vec3f) -> vec3f {
   let horizon = vec3f(0.58, 0.68, 0.82) * (0.5 + 0.5 * sunH);
   var c = mix(horizon, zenith, pow(y, 0.42));
   let mu = max(dot(d, L), 0.0);
+  // low sun: warm band along the horizon, strongest towards the sun
+  let low = 1.0 - smoothstep(0.02, 0.35, L.y);
+  c = mix(c, vec3f(1.0, 0.55, 0.30) * (0.55 + 0.6 * pow(mu, 3.0)), low * exp(-y * 7.0) * (0.35 + 0.5 * pow(mu, 2.0)));
   c += F.sunColor.rgb * (0.025 * pow(mu, 6.0) + 0.12 * pow(mu, 48.0));
   // slightly warmer, denser band right at the horizon
   c = mix(c, horizon * vec3f(1.05, 1.0, 0.95), exp(-y * 18.0) * 0.5);
@@ -236,4 +240,9 @@ fn cloudShadow(p: vec3f) -> f32 {
   if (F.clouds.z <= 0.0 || L.y <= 0.02 || p.y > CLOUD_H) { return 1.0; }
   let q = p.xz + L.xz / L.y * (CLOUD_H - p.y);
   return 1.0 - 0.7 * cloudDensity(q);
+}
+
+// Share of conifers (spruce / fir) vs broadleaf (beech / chestnut): higher up, north faces, noise.
+fn coniferShare(xz: vec2f, h: f32, northness: f32) -> f32 {
+  return smoothstep(850.0, 1450.0, h) * 0.75 + northness * 0.2 + noise(xz / 180.0) * 0.25;
 }
