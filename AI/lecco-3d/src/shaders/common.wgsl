@@ -208,16 +208,10 @@ fn urbanWeight(p: vec3f, nb: vec3f, m: f32) -> f32 {
   let flat = smoothstep(0.78, 0.92, nb.y);
   return m * flat;
 }
-// Inside towns: parks / sports fields (no houses, lawns and trees) and industrial estates
-// (large sheds) on the flattest, lowest ground. Procedural clusters, ~10-15 % each.
-fn parkWeight(xz: vec2f) -> f32 {
-  return smoothstep(0.56, 0.70, noise(xz / 320.0 + 31.0) * 0.75 + noise(xz / 90.0 + 7.0) * 0.25 + 0.5 * 0.0);
-}
-fn industryWeight(xz: vec2f, h: f32, nby: f32) -> f32 {
-  let flat = smoothstep(0.96, 0.99, nby);
-  let low = 1.0 - smoothstep(260.0, 330.0, h);
-  return smoothstep(0.50, 0.62, noise(xz / 900.0 + 21.0) * 0.8 + noise(xz / 250.0 + 3.0) * 0.2) * flat * low;
-}
+// Inside towns, from the OSM landuse masks (land texture: r = industrial, g = green):
+// parks / gardens / pitches stay open (lawns, park trees), industrial estates get large sheds.
+fn parkWeight(g: f32) -> f32 { return smoothstep(0.3, 0.6, g); }
+fn industryWeight(ind: f32, nby: f32) -> f32 { return smoothstep(0.35, 0.6, ind) * smoothstep(0.85, 0.95, nby); }
 
 // ---------------------------------------------------------------- clouds
 // One layer of drifting cumulus at CLOUD_H, density from a seeded fbm (a new sky every load).

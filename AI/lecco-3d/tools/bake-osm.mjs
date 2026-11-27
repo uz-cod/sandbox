@@ -2,7 +2,7 @@
 //   src/generated/osm.bin   deflate-raw: way counts | classes | flags | trail points | route points
 //   src/generated/osm.json  quantisation, routes touching the summits, huts, crosses
 // Data © OpenStreetMap contributors, ODbL 1.0.
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { deflateRawSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -12,6 +12,7 @@ import { PEAKS, PLACES, CROP } from '../src/peaks.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const EXTRACT = join(ROOT, 'data/osm/extract.json');
+const EXTRA = join(ROOT, 'data/osm/extra.json');
 const DEM_FILE = join(ROOT, 'data/raw/Copernicus_DSM_COG_10_N45_00_E009_00_DEM.tif');
 const OUT_DIR = join(ROOT, 'src/generated');
 
@@ -239,7 +240,18 @@ export function bakeOsm({ quiet = false } = {}) {
     return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
   };
   const normCai = (c) => (/^(EEA|EE|E|T)/.exec((c || '').toUpperCase().replace(/[^A-Z]/g, '')) || [''])[0];
-  const named = [...huts.map((h) => ({ name: h.name, x: h.x, z: h.z })), ...ex.peaks.map((p) => { const [x, z] = toXZ(p.lat / 1e6, p.lon / 1e6); return { name: p.name, x, z }; })].filter((n) => n.name);
+  // extra OSM layer (bridges, aerialways, places, stations): data/osm/extra.json
+  const extra = existsSync(EXTRA) ? JSON.parse(readFileSync(EXTRA, 'utf8')).elements : [];
+  const placeNames = [];
+  for (const e of extra) {
+    const t = e.tags || {};
+    if (e.type !== 'node' || !t.name) continue;
+    if (/^(town|village|suburb|hamlet|locality)$/.test(t.place) || t.railway === 'station') {
+      const [x, z] = toXZ(e.lat, e.lon);
+      placeNames.push({ name: t.railway === 'station' ? `Stazione di ${t.name.replace(/^Stazione( di)? /i, '')}` : t.name, x, z, rank: t.place === 'town' || t.place === 'village' ? 0 : 1 });
+    }
+  }
+  const named = [...huts.map((h) => ({ name: h.name, x: h.x, z: h.z })), ...ex.peaks.map((p) => { const [x, z] = toXZ(p.lat / 1e6, p.lon / 1e6); return { name: p.name, x, z }; }), ...placeNames].filter((n) => n.name);
   const itineraries = [];
   routes.forEach((r, ri) => {
     const maxSac = Math.max(0, ...r.wayIds.map((id) => sacOf.get(id) || 0));
@@ -344,6 +356,28 @@ export function bakeOsm({ quiet = false } = {}) {
   });
   for (const r of routes) { delete r.wayIds; delete r.placeTouches; }
 
+  // --- bridges (roads / rail / paths >= 15 m) and aerialways
+  const ROAD_W = { motorway: 12, trunk: 11, primary: 10, secondary: 9, tertiary: 8, unclassified: 6, residential: 6, service: 5, pedestrian: 5, cycleway: 3, footway: 2.5, path: 2 };
+  const bridges = [], aerial = [];
+  const lenOf = (p) => { let L = 0; for (let i = 2; i < p.length; i += 2) L += Math.hypot(p[i] - p[i - 2], p[i + 1] - p[i - 1]); return L; };
+  for (const e of extra) {
+    const t = e.tags || {};
+    if (e.type !== 'way' || !e.geometry) continue;
+    const pts = e.geometry.flatMap((g) => toXZ(g.lat, g.lon));
+    if (!pts.some((v, i) => i % 2 === 0 && inCrop(v, pts[i + 1]))) continue;
+    if (t.bridge && t.bridge !== 'no' && (t.highway || t.railway)) {
+      const L = lenOf(pts);
+      if (L < 15) continue;
+      const rail = !!t.railway;
+      const lanes = Number(t.lanes) || 0;
+      const w = Number(t.width) || (rail ? 8 : Math.max(ROAD_W[t.highway] || 5, lanes ? lanes * 3.4 + 1.5 : 0));
+      bridges.push({ k: rail ? 2 : /footway|path|cycleway|pedestrian/.test(t.highway) ? 1 : 0, w: +w.toFixed(1), n: t['bridge:name'] || (/ponte|viadotto/i.test(t.name || '') ? t.name : ''),
+        p: simplify(pts, 0.4).map((v) => +v.toFixed(1)) });
+    } else if (/^(cable_car|gondola|chair_lift|drag_lift|platter|goods)$/.test(t.aerialway || '')) {
+      aerial.push({ k: t.aerialway, n: t.name || '', p: pts.map((v) => +v.toFixed(1)) });
+    }
+  }
+
   // --- crosses >= 600 m
   const crosses = [];
   for (const c of ex.crosses) {
@@ -369,7 +403,7 @@ export function bakeOsm({ quiet = false } = {}) {
 
   const meta = {
     quant: { origin: Q0, scale: QS }, ways: nW, trailPoints: nT, routePoints: nR, classes: CLASSES,
-    routes, huts, crosses, itineraries, trailheads, placeItineraries, timestamp: ex.timestamp,
+    routes, huts, crosses, itineraries, trailheads, placeItineraries, bridges, aerial, timestamp: ex.timestamp,
     attribution: 'Sentieri, rifugi e croci © OpenStreetMap contributors (ODbL)',
   };
   mkdirSync(OUT_DIR, { recursive: true });
@@ -388,7 +422,8 @@ export function bakeOsm({ quiet = false } = {}) {
     log(`  ◆ ${pl.short.padEnd(22)} ${its.length} sentieri: ${its.map((i) => `${i.ref || '-'}→${i.dest}`).join(' · ')}`);
   }
   log(`huts/bivouacs >= ${MIN_HUT_ELE} m: ${huts.length} (${huts.filter((h) => h.type === 'bivouac').length} bivouacs, ${huts.filter((h) => h.fromPoly).length} with footprint); crosses: ${crosses.length}`);
-  log(`osm.bin ${(bin.length / 1024).toFixed(0)} KB`);
+  log(`bridges: ${bridges.length} (${bridges.filter((x) => x.n).map((x) => x.n).filter((v, i, a) => a.indexOf(v) === i).slice(0, 8).join(', ')}…); aerialways: ${aerial.length}; place names: ${placeNames.length}`);
+  log(`osm.bin ${(bin.length / 1024).toFixed(0)} KB, osm.json ${(JSON.stringify(meta).length / 1024).toFixed(0)} KB`);
   return meta;
 }
 

@@ -151,6 +151,7 @@ export function bake({ quiet = false } = {}) {
   // --- built-up mask: density of town footways / steps and restaurants / hotels (OSM),
   // ~400 m kernel, kept to valley floors and lower slopes (stored in the water texture's B)
   const urban = new Uint8Array(N * N);
+  let landPlanes = null;
   if (existsSync(EXTRACT)) {
     const ex = JSON.parse(readFileSync(EXTRACT, 'utf8'));
     const den = new Float32Array(N * N);
@@ -181,6 +182,85 @@ export function bake({ quiet = false } = {}) {
     for (let s = 0; s < N * N; s++) {
       const low = Math.min(1, Math.max(0, (650 - H[s]) / 120));
       urban[s] = Math.round(255 * Math.min(1, Math.max(0, (den[s] - 3) / 25)) * low);
+    }
+    // real landuse polygons (data/osm/extra.json): residential/commercial/retail -> built-up,
+    // industrial/commercial/retail -> large sheds, parks/gardens/pitches/grass -> green
+    const EXTRA = join(ROOT, 'data/osm/extra.json');
+    if (existsSync(EXTRA)) {
+      const ext = JSON.parse(readFileSync(EXTRA, 'utf8'));
+      const M = 2 * N;                                   // 2x2 supersampling for coverage
+      const fine = { res: new Uint8Array(M * M), ind: new Uint8Array(M * M), green: new Uint8Array(M * M) };
+      const toG = (lat, lon) => { const [x, z] = toXZ(lat, lon); return [(x + HALF) / SP * 2, (z + HALF) / SP * 2]; };
+      // join member ways into closed rings
+      const rings = (ways) => {
+        const pieces = ways.map((g) => g.map((p) => toG(p.lat, p.lon)));
+        const out = [];
+        const used = new Uint8Array(pieces.length);
+        const same = (a2, b2) => Math.abs(a2[0] - b2[0]) < 1e-3 && Math.abs(a2[1] - b2[1]) < 1e-3;
+        for (let i = 0; i < pieces.length; i++) {
+          if (used[i]) continue;
+          used[i] = 1;
+          let r = pieces[i].slice();
+          for (let grew = true; grew && !same(r[0], r[r.length - 1]);) {
+            grew = false;
+            for (let k = 0; k < pieces.length; k++) {
+              if (used[k]) continue;
+              const p = pieces[k];
+              if (same(r[r.length - 1], p[0])) r = r.concat(p.slice(1));
+              else if (same(r[r.length - 1], p[p.length - 1])) r = r.concat(p.slice(0, -1).reverse());
+              else continue;
+              used[k] = 1; grew = true;
+            }
+          }
+          if (r.length >= 4) out.push(r);
+        }
+        return out;
+      };
+      // even-odd scanline fill of a set of rings (holes included)
+      const fill = (rs, target) => {
+        let y0 = Infinity, y1 = -Infinity;
+        for (const r of rs) for (const p of r) { y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+        const ys = Math.max(0, Math.floor(y0)), ye = Math.min(M - 1, Math.ceil(y1));
+        const xs = [];
+        for (let y = ys; y <= ye; y++) {
+          const cy = y + 0.5;
+          xs.length = 0;
+          for (const r of rs) for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+            const a2 = r[i], b2 = r[j];
+            if ((a2[1] > cy) !== (b2[1] > cy)) xs.push(a2[0] + ((cy - a2[1]) / (b2[1] - a2[1])) * (b2[0] - a2[0]));
+          }
+          xs.sort((p, q) => p - q);
+          for (let k = 0; k + 1 < xs.length; k += 2) {
+            const xa = Math.max(0, Math.ceil(xs[k] - 0.5)), xb = Math.min(M - 1, Math.floor(xs[k + 1] - 0.5));
+            for (let x = xa; x <= xb; x++) target[y * M + x] = 1;
+          }
+        }
+      };
+      let nPoly = 0;
+      for (const e of ext.elements) {
+        const t = e.tags || {};
+        const cls = /^(residential)$/.test(t.landuse) ? 'res' : /^(industrial|commercial|retail)$/.test(t.landuse) ? 'ind'
+          : /^(park|garden|pitch)$/.test(t.leisure) || t.landuse === 'grass' ? 'green' : null;
+        if (!cls) continue;
+        let rs = [];
+        if (e.type === 'way' && e.geometry) rs = rings([e.geometry]);
+        else if (e.type === 'relation' && e.members) rs = rings(e.members.filter((m) => m.geometry).map((m) => m.geometry));
+        if (!rs.length) continue;
+        fill(rs, fine[cls]); nPoly++;
+        if (t.landuse === 'commercial' || t.landuse === 'retail') fill(rs, fine.res);
+      }
+      const industry = new Uint8Array(N * N), green = new Uint8Array(N * N);
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+        const f = (a2) => (a2[(2 * j) * M + 2 * i] + a2[(2 * j) * M + 2 * i + 1] + a2[(2 * j + 1) * M + 2 * i] + a2[(2 * j + 1) * M + 2 * i + 1]) / 4;
+        const s = j * N + i;
+        const res = f(fine.res), ind = f(fine.ind), gr = f(fine.green);
+        // polygons lead; the footway/restaurant density only fills unmapped villages (half strength)
+        urban[s] = Math.round(255 * Math.min(1, Math.max(res + ind, (urban[s] / 255) * 0.5)) * (1 - gr * 0.9));
+        industry[s] = Math.round(255 * ind);
+        green[s] = Math.round(255 * gr);
+      }
+      landPlanes = { industry, green };
+      log(`landuse polygons rasterised: ${nPoly}`);
     }
     let cov = 0; for (let s = 0; s < N * N; s++) if (urban[s] > 128) cov++;
     log(`built-up mask: ${((cov * SP * SP) / 1e6).toFixed(1)} km² (from ${(ex.pois || []).length} restaurants/hotels + town footways)`);
@@ -228,7 +308,7 @@ export function bake({ quiet = false } = {}) {
   const scale = (hMax - hMin) / 65535;
   const Q = new Uint16Array(N * N);
   for (let s = 0; s < N * N; s++) Q[s] = Math.round((H[s] - hMin) / scale);
-  const payload = new Uint8Array(N * N * 5);
+  const payload = new Uint8Array(N * N * 7);
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const s = j * N + i;
     const a = i > 0 ? Q[s - 1] : 0, b = j > 0 ? Q[s - N] : 0, c = i > 0 && j > 0 ? Q[s - N - 1] : 0;
@@ -239,6 +319,7 @@ export function bake({ quiet = false } = {}) {
   payload.set(water, 2 * N * N);
   payload.set(shore, 3 * N * N);
   payload.set(urban, 4 * N * N);
+  if (landPlanes) { payload.set(landPlanes.industry, 5 * N * N); payload.set(landPlanes.green, 6 * N * N); }
   const bin = deflateRawSync(payload, { level: 9, memLevel: 9 });
 
   const meta = {

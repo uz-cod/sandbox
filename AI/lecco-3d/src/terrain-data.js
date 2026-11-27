@@ -11,6 +11,8 @@ export async function loadTerrain() {
   const N = meta.samples, NN = N * N;
   const heights = new Float32Array(NN);
   const water = new Uint8Array(NN * 4); // rgba8: water fraction, shore distance, built-up, unused
+  const land = new Uint8Array(NN * 2);  // rg8: industrial, green (OSM landuse)
+  const hasLand = payload.length >= 7 * NN;
   const q = new Uint16Array(NN);
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
@@ -23,10 +25,11 @@ export async function loadTerrain() {
       water[s * 4] = payload[2 * NN + s];
       water[s * 4 + 1] = payload[3 * NN + s];
       water[s * 4 + 2] = payload[4 * NN + s];
+      if (hasLand) { land[s * 2] = payload[5 * NN + s]; land[s * 2 + 1] = payload[6 * NN + s]; }
     }
   }
   terrain.heights = heights;
-  return { heights, water };
+  return { heights, water, land };
 }
 
 export const terrain = { heights: null };

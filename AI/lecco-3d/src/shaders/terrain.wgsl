@@ -14,6 +14,7 @@ struct Level {
 @group(0) @binding(4) var shadeTex: texture_2d<f32>;    // (sun vis, ao, sky view) over ext
 @group(0) @binding(5) var waterTex: texture_2d<f32>;    // (water fraction, shore distance) over crop
 @group(0) @binding(6) var linSamp: sampler;
+@group(0) @binding(12) var landTex: texture_2d<f32>;   // (industrial, green) over crop
 const GRID: u32 = 128u;
 const RELIEF_WL: f32 = 56.0;   // wavelength of the first micro-relief octave (m)
 
@@ -28,6 +29,11 @@ fn waterUV(xz: vec2f) -> vec2f { return ((xz - F.terr.xy) / F.terr.z + 0.5) / F.
 fn insideUnit(uv: vec2f) -> bool { return all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)); }
 
 fn waterAt(xz: vec2f) -> vec2f { return waterUrbanAt(xz).rg; }
+fn landAt(xz: vec2f) -> vec2f {
+  let uv = waterUV(xz);
+  if (!insideUnit(uv)) { return vec2f(0.0); }
+  return textureSampleLevel(landTex, linSamp, uv, 0.0).rg;
+}
 fn waterUrbanAt(xz: vec2f) -> vec3f {
   let uv = waterUV(xz);
   if (!insideUnit(uv)) { return vec3f(0.0); }
@@ -139,8 +145,12 @@ fn material(p: vec3f, nb: vec3f, n: vec3f, curv: f32, relief: f32, dist: f32) ->
   let fields = mix(vec3f(0.10, 0.14, 0.055), vec3f(0.17, 0.165, 0.12), smoothstep(0.2, 0.8, noise(p.xz / 90.0)) * 0.6);
   c = mix(c, fields, lowW * 0.6);
   // built-up areas: streets, yards and (from far away) the roofscape of the towns
-  let park = parkWeight(p.xz);
+  let land = landAt(p.xz);
+  let park = parkWeight(land.g);
   let urb = urbanWeight(p, nb, waterUrbanAt(p.xz).b) * (1.0 - park);
+  // industrial estates: concrete yards; parks: mown lawn
+  c = mix(c, vec3f(0.24, 0.24, 0.23) * (0.9 + 0.2 * noise(p.xz / 11.0)), industryWeight(land.r, nb.y) * 0.8);
+  c = mix(c, vec3f(0.10, 0.16, 0.05) * (0.9 + 0.2 * noise(p.xz / 6.0)), park * smoothstep(0.05, 0.3, waterUrbanAt(p.xz).b + land.g) * 0.7);
   let blocks = noise(p.xz / 23.0) * 0.5 + noise(p.xz / 7.0) * 0.3 * mid;
   let townCol = mix(mix(vec3f(0.17, 0.17, 0.16), vec3f(0.11, 0.14, 0.07), smoothstep(-0.3, 0.4, blocks)), mix(vec3f(0.30, 0.17, 0.12), vec3f(0.40, 0.37, 0.32), smoothstep(-0.2, 0.3, blocks)), smoothstep(1500.0, 4500.0, dist) * 0.8);
   c = mix(c, mix(townCol, c, 0.35 * (noise(p.xz / 140.0 + 3.0) * 0.5 + 0.5)), urb * 0.6);

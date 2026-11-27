@@ -141,7 +141,9 @@ export async function loadOsm() {
   for (let c = 0; c < cellCount; c++) maxPerCell = Math.max(maxPerCell, cnt[c]);
 
   // ---------------------------------------------------------------- building mesh
-  const mesh = buildMesh(huts, crosses);
+  const lines = [];
+  const mesh = buildMesh(huts, crosses, osmMeta.bridges || [], osmMeta.aerial || [], lines);
+  const lineData = new Float32Array(lines);
 
   // ---------------------------------------------------------------- itineraries / trailheads per summit
   const ths = osmMeta.trailheads.map((t) => ({ ...t, y: groundHeightCubic(t.x, t.z), its: [] }));
@@ -182,7 +184,7 @@ export async function loadOsm() {
 
   return {
     segs, attr, grid, gridInfo: [gx0, gz0, GRID_CELL, dim], nSeg, nTrailSeg, nPads, maxPerCell,
-    mesh, routePts, trailheads: ths, byPeak, pins, peakBit, huts, places,
+    mesh, lineData, routePts, trailheads: ths, byPeak, pins, peakBit, huts, places,
   };
 }
 
@@ -210,9 +212,9 @@ export function reversed(it) {
 
 // ------------------------------------------------------------------ procedural buildings
 // Vertex: position(3) normal(3) uv(2: along-wall metres, height above base) mat(2: id, wall length)
-export const MAT = { STONE: 0, PLASTER: 1, ROOF: 2, BIVOUAC: 3, METAL: 4, BASE: 5, ROOF_METAL: 6, WOOD: 7 };
+export const MAT = { STONE: 0, PLASTER: 1, ROOF: 2, BIVOUAC: 3, METAL: 4, BASE: 5, ROOF_METAL: 6, WOOD: 7, CONCRETE: 8, ASPHALT: 9, BALLAST: 10 };
 
-function buildMesh(huts, crosses) {
+function buildMesh(huts, crosses, bridges, aerial, lines) {
   const v = [];
   const push = (x, y, z, nx, ny, nz, u, h, mat, wl) => v.push(x, y, z, nx, ny, nz, u, h, mat, wl);
   const quad = (a, b, c, d, n, uv, mat, wl) => {
@@ -285,6 +287,92 @@ function buildMesh(huts, crosses) {
     const ay = b + 0.45 + H * 0.72;
     const A = frame(c.x, c.z, ang);
     box(A, H * 0.27, 0.1, ay - 0.1, ay + 0.1, b, MAT.METAL, MAT.METAL);
+  }
+  // ---------------------------------------------------------------- bridges
+  for (const br of bridges) {
+    const p = br.p, n = p.length / 2;
+    if (n < 2) continue;
+    const cum = [0];
+    for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]));
+    const L = cum[n - 1];
+    const h0 = groundHeightCubic(p[0], p[1]), h1 = groundHeightCubic(p[2 * n - 2], p[2 * n - 1]);
+    // spans over water or a gully get a gentle hump; never below ground + clearance
+    let depth = 0;
+    for (let i = 0; i < n; i++) depth = Math.max(depth, h0 + (h1 - h0) * (cum[i] / L) - groundHeightCubic(p[2 * i], p[2 * i + 1]));
+    const lift = Math.min(6, Math.max(0, depth * 0.3));
+    const deckAt = (s, x, z) => Math.max(h0 + (h1 - h0) * (s / L) + 0.6 + lift * Math.sin(Math.PI * s / L), groundHeightCubic(x, z) + 1.2);
+    const hw = br.w / 2, th = br.k === 1 ? 0.5 : 1.3;
+    const top = br.k === 2 ? MAT.BALLAST : br.k === 1 ? MAT.WOOD : MAT.ASPHALT;
+    for (let i = 0; i < n - 1; i++) {
+      const ax = p[2 * i], az = p[2 * i + 1], bx = p[2 * i + 2], bz = p[2 * i + 3];
+      const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz) || 1;
+      const nx = (-dz / len) * hw, nz = (dx / len) * hw;
+      const ya = deckAt(cum[i], ax, az), yb = deckAt(cum[i + 1], bx, bz);
+      const A = (s, y) => [ax + nx * s, y, az + nz * s], B = (s, y) => [bx + nx * s, y, bz + nz * s];
+      quad(A(-1, ya), A(1, ya), B(1, yb), B(-1, yb), [0, 1, 0], [0, 0, 0, br.w, len, br.w, len, 0], top, br.w);
+      quad(A(1, ya - th), B(1, yb - th), B(1, yb), A(1, ya), [nx / hw, 0, nz / hw], [0, -th, len, -th, len, 0, 0, 0], MAT.CONCRETE, len);
+      quad(B(-1, yb - th), A(-1, ya - th), A(-1, ya), B(-1, yb), [-nx / hw, 0, -nz / hw], [0, -th, len, -th, len, 0, 0, 0], MAT.CONCRETE, len);
+      quad(A(-1, ya - th), B(-1, yb - th), B(1, yb - th), A(1, ya - th), [0, -1, 0], [0, 0, 0, 0, 0, 0, 0, 0], MAT.CONCRETE, len);
+      for (const sgn of [-1, 1]) {                       // parapets
+        const s0 = sgn * 0.97, s1 = sgn;
+        quad(A(s0, ya + 1.0), A(s1, ya + 1.0), B(s1, yb + 1.0), B(s0, yb + 1.0), [0, 1, 0], [0, 0, 0, 0, 0, 0, 0, 0], MAT.CONCRETE, len);
+        quad(A(s1, ya), B(s1, yb), B(s1, yb + 1.0), A(s1, ya + 1.0), [(sgn * nx) / hw, 0, (sgn * nz) / hw], [0, 0, len, 0, len, 1, 0, 1], MAT.CONCRETE, len);
+        quad(B(s0, yb), A(s0, ya), A(s0, ya + 1.0), B(s0, yb + 1.0), [(-sgn * nx) / hw, 0, (-sgn * nz) / hw], [0, 0, len, 0, len, 1, 0, 1], MAT.CONCRETE, len);
+      }
+    }
+    const spans = Math.max(1, Math.round(L / 35));          // piers every ~35 m, not at the abutments
+    for (let k = 1; k < spans; k++) {
+      const s = (k / spans) * L;
+      let i = 0; while (i < n - 2 && cum[i + 1] < s) i++;
+      const t = (s - cum[i]) / Math.max(1e-6, cum[i + 1] - cum[i]);
+      const x = p[2 * i] + (p[2 * i + 2] - p[2 * i]) * t, z = p[2 * i + 1] + (p[2 * i + 3] - p[2 * i + 1]) * t;
+      const y = deckAt(s, x, z) - th, g = groundHeightCubic(x, z);
+      if (y - g < 2.5) continue;
+      const F = frame(x, z, Math.atan2(p[2 * i + 3] - p[2 * i + 1], p[2 * i + 2] - p[2 * i]));
+      box(F, 0.9, hw * 0.55, g - 4, y, g, MAT.CONCRETE, -1);
+    }
+  }
+
+  // ---------------------------------------------------------------- aerialways: cables (lines), pylons, stations, cabins
+  for (const a of aerial) {
+    const p = a.p, n = p.length / 2;
+    if (n < 2) continue;
+    const big = a.k === 'cable_car', goods = a.k === 'goods';
+    const hTop = (i) => groundHeightCubic(p[2 * i], p[2 * i + 1]) + (i === 0 || i === n - 1 ? (goods ? 4 : 7) : big ? 28 : goods ? 10 : 12);
+    const dx0 = p[2 * n - 2] - p[0], dz0 = p[2 * n - 1] - p[1], l0 = Math.hypot(dx0, dz0) || 1;
+    const ox = -dz0 / l0, oz = dx0 / l0;
+    const offs = goods || a.k === 'drag_lift' || a.k === 'platter' ? [0] : big ? [-3, 3] : [-2.2, 2.2];
+    for (let i = 0; i < n - 1; i++) {
+      const ax = p[2 * i], az = p[2 * i + 1], bx = p[2 * i + 2], bz = p[2 * i + 3];
+      const ya = hTop(i), yb = hTop(i + 1), span = Math.hypot(bx - ax, bz - az);
+      const sag = span * (big ? 0.035 : 0.02);
+      const P = (t, o) => [ax + (bx - ax) * t + ox * o, ya + (yb - ya) * t - 4 * sag * t * (1 - t), az + (bz - az) * t + oz * o];
+      for (const o of offs) {
+        const SUB = 14;
+        for (let k = 0; k < SUB; k++) {
+          const q0 = P(k / SUB, o), q1 = P((k + 1) / SUB, o);
+          lines.push(q0[0], q0[1], q0[2], 0, q1[0], q1[1], q1[2], 0);
+        }
+      }
+      if (big) {                                            // two cabins, one on each cable
+        for (const [t, o] of [[0.32, -3], [0.68, 3]]) {
+          const q = P(t, o);
+          const F = frame(q[0], q[2], Math.atan2(bz - az, bx - ax));
+          box(F, 1.6, 1.2, q[1] - 6.2, q[1] - 3.6, q[1] - 6.2, MAT.BIVOUAC, MAT.ROOF_METAL);
+          box(F, 0.06, 0.06, q[1] - 3.6, q[1], q[1], MAT.METAL, -1);
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const x = p[2 * i], z = p[2 * i + 1], g = groundHeightCubic(x, z), topY = hTop(i);
+      const F = frame(x, z, Math.atan2(dz0, dx0));
+      if (i === 0 || i === n - 1) {
+        if (!goods) box(F, big ? 7 : 4, big ? 5 : 3.5, g - 3, topY + 1, g, MAT.STONE, MAT.ROOF_METAL);
+      } else {
+        box(F, big ? 0.9 : 0.35, big ? 0.9 : 0.35, g - 2, topY, g, MAT.METAL, -1);
+        box(F, 0.25, Math.max(...offs.map(Math.abs)) + 0.6, topY - 0.3, topY, g, MAT.METAL, MAT.METAL);
+      }
+    }
   }
   return new Float32Array(v);
 }

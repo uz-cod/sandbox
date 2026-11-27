@@ -3,7 +3,7 @@
 Real-time scene of the real mountains around Lecco (Italy), built on raw WebGPU + WGSL
 (no engines) and shipped as a single self-contained `dist/index.html` (~2.2 MB).
 External data: the Copernicus GLO-30 DEM and OpenStreetMap (trails, hiking routes, huts,
-bivouacs, crosses); everything else is procedural.
+bivouacs, crosses, landuse, bridges, aerialways, place names); everything else is procedural.
 
 ## Run
 
@@ -46,6 +46,14 @@ npm run build        # bakes the DEM if needed, then bundles to dist/index.html
 npm run bake         # DEM bake only (prints snapped summits and lake levels)
 npm run shot -- "peak=2&hud=0"   # headless screenshots into shots/ (needs Playwright)
 ```
+
+## OSM extra layer
+
+`data/osm/extra.json` is exported from Overpass Turbo with `tools/overpass-extra.overpassql`
+(bridges, residential / industrial / commercial landuse, parks / gardens / pitches, aerialways,
+stations, place names). The DEM bake rasterises the landuse polygons into built-up, industrial and
+green masks; the OSM bake turns bridges and aerialways into geometry and uses place and station
+names to name itinerary destinations.
 
 ## How it works
 

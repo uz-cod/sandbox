@@ -6,6 +6,7 @@ import normalsWGSL from './shaders/precompute-normals.wgsl';
 import shadeWGSL from './shaders/precompute-shade.wgsl';
 import buildingsWGSL from './shaders/buildings.wgsl';
 import pinsWGSL from './shaders/pins.wgsl';
+import linesWGSL from './shaders/lines.wgsl';
 import featuresWGSL from './shaders/features.wgsl';
 import treesScatterWGSL from './shaders/trees-scatter.wgsl';
 import treesDrawWGSL from './shaders/trees-draw.wgsl';
@@ -25,7 +26,7 @@ const TREE_NEAR_MAX = 30000, TREE_FAR_MAX = 200000, HOUSE_MAX = 120000, TREE_STR
 // Frame uniform layout (floats), see struct Frame in common.wgsl
 const U_VIEWPROJ = 0, U_INVVP = 16, U_CAM = 32, U_SUN = 36, U_SUNCOL = 40, U_TERR = 44, U_EXT = 48, U_SCREEN = 52, U_FOG = 56, U_MISC = 60, U_GRID = 64, U_CLOUDS = 68, U_SEL = 72;
 
-export async function createRenderer(canvas, { heights, water }, osm, opts) {
+export async function createRenderer(canvas, { heights, water, land }, osm, opts) {
   if (!navigator.gpu) throw new Error('WebGPU non disponibile in questo browser.');
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
   if (!adapter) throw new Error('Nessun adattatore WebGPU disponibile.');
@@ -45,6 +46,8 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   device.queue.writeTexture({ texture: heightTex }, heights, { bytesPerRow: N * 4 }, [N, N]);
   const waterTex = device.createTexture({ size: [N, N], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
   device.queue.writeTexture({ texture: waterTex }, water, { bytesPerRow: N * 4 }, [N, N]);
+  const landTex = device.createTexture({ size: [N, N], format: 'rg8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+  device.queue.writeTexture({ texture: landTex }, land, { bytesPerRow: N * 2 }, [N, N]);
   const PRE = opts.precomputeSize;
   const normalTex = device.createTexture({ size: [PRE, PRE], format: 'rgba16float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING });
   const shadeTex = device.createTexture({ size: [PRE, PRE], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING });
@@ -86,6 +89,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       { binding: 7, visibility: VF, buffer: { type: 'read-only-storage' } },
       { binding: 8, visibility: VF, buffer: { type: 'read-only-storage' } },
       { binding: 9, visibility: VF, buffer: { type: 'read-only-storage' } },
+      { binding: 12, visibility: VF, texture: { sampleType: 'float' } },
     ],
   });
   const buildLayout = device.createBindGroupLayout({
@@ -112,6 +116,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       { binding: 9, visibility: CS, buffer: { type: 'read-only-storage' } },
       { binding: 10, visibility: CS, buffer: { type: 'storage' } },
       { binding: 11, visibility: CS, buffer: { type: 'storage' } },
+      { binding: 12, visibility: CS, texture: { sampleType: 'float' } },
     ],
   });
   const shadeLayout = storageLayout('rgba8unorm');
@@ -123,10 +128,10 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
     if (errs.length) throw new Error(`${label}: ${errs.map((e) => `line ${e.lineNum}: ${e.message}`).join('\n')}`);
     return m;
   };
-  const [terrainMod, skyMod, normalsMod, shadeMod, buildMod, pinMod, scatterMod, treeMod] = await Promise.all([
+  const [terrainMod, skyMod, normalsMod, shadeMod, buildMod, pinMod, scatterMod, treeMod, lineMod] = await Promise.all([
     module('terrain', featuresWGSL + '\n' + terrainWGSL), module('sky', skyWGSL), module('normals', normalsWGSL), module('shade', shadeWGSL),
     module('buildings', buildingsWGSL), module('pins', pinsWGSL),
-    module('trees-scatter', featuresWGSL + '\n' + treesScatterWGSL), module('trees-draw', treesDrawWGSL),
+    module('trees-scatter', featuresWGSL + '\n' + treesScatterWGSL), module('trees-draw', treesDrawWGSL), module('lines', linesWGSL),
   ]);
 
   // ---------------------------------------------------------------- OSM buffers
@@ -142,6 +147,9 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   const pinBuf = device.createBuffer({ size: Math.max(32, osm.pins.byteLength), usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(pinBuf, 0, osm.pins);
   const pinCount = osm.pins.length / 8;
+  const lineBuf = device.createBuffer({ size: Math.max(32, osm.lineData.byteLength), usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(lineBuf, 0, osm.lineData);
+  const lineCount = osm.lineData.length / 8;
 
   // ---------------------------------------------------------------- trees
   const treeMeshes = buildTreeMeshes();
@@ -193,7 +201,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
     ] },
     { arrayStride: TREE_STRIDE, stepMode: 'instance', attributes: instAttrs },
   ];
-  const [terrainPipe, skyPipe, buildPipe, pinPipe, treeMeshPipe, treeBBPipe, housePipe] = await Promise.all([
+  const [terrainPipe, skyPipe, buildPipe, pinPipe, treeMeshPipe, treeBBPipe, housePipe, linePipe] = await Promise.all([
     device.createRenderPipelineAsync({
       layout: device.createPipelineLayout({ bindGroupLayouts: [terrainLayout] }),
       vertex: { module: terrainMod, entryPoint: 'vsTerrain' },
@@ -259,6 +267,14 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil, multisample: a2c,
     }),
+    device.createRenderPipelineAsync({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [skyLayout] }),
+      vertex: { module: lineMod, entryPoint: 'vsLine', buffers: [{ arrayStride: 32, stepMode: 'instance', attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x4' }, { shaderLocation: 1, offset: 16, format: 'float32x4' }] }] },
+      fragment: { module: lineMod, entryPoint: 'fsLine', targets: [{ format }] },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil, multisample,
+    }),
   ]);
   const terrainBG = device.createBindGroup({ layout: terrainLayout, entries: [
     { binding: 0, resource: { buffer: frameBuf } },
@@ -271,6 +287,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
     { binding: 7, resource: { buffer: segBuf } },
     { binding: 8, resource: { buffer: attrBuf } },
     { binding: 9, resource: { buffer: gridBuf } },
+    { binding: 12, resource: landTex.createView() },
   ] });
   const buildBG = device.createBindGroup({ layout: buildLayout, entries: [
     { binding: 0, resource: { buffer: frameBuf } },
@@ -289,6 +306,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
     { binding: 9, resource: { buffer: gridBuf } },
     { binding: 10, resource: { buffer: treesBuf } },
     { binding: 11, resource: { buffer: argsBuf } },
+    { binding: 12, resource: landTex.createView() },
   ] });
   const skyBG = device.createBindGroup({ layout: skyLayout, entries: [{ binding: 0, resource: { buffer: frameBuf } }] });
 
@@ -411,6 +429,12 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
       pass.setVertexBuffer(0, houseBuf);
       pass.setVertexBuffer(1, treesBuf, (2 * TREE_NEAR_MAX + TREE_FAR_MAX) * TREE_STRIDE);
       pass.drawIndirect(argsBuf, 48);
+    }
+    if (lineCount > 0) {
+      pass.setPipeline(linePipe);
+      pass.setBindGroup(0, skyBG);
+      pass.setVertexBuffer(0, lineBuf);
+      pass.draw(6, lineCount);
     }
     if (pinCount > 0 && frame[U_MISC + 3] > 0) {
       pass.setPipeline(pinPipe);

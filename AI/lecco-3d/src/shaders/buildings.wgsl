@@ -91,6 +91,19 @@ fn buildingSurf(i: BOut) -> BSurf {
     }
     case 4u: { s.albedo = vec3f(0.07, 0.07, 0.075); s.spec = 0.5; }            // iron
     case 5u: { s.albedo = vec3f(0.38, 0.37, 0.35) * (0.85 + 0.3 * noise(uv * 4.0)); }  // concrete / stone base
+    case 8u: { s.albedo = vec3f(0.46, 0.45, 0.42) * (0.85 + 0.2 * noise(uv * vec2f(0.7, 2.0))); }   // bridge concrete
+    case 9u: {   // asphalt deck (uv.x along, uv.y across, L = width): dashed centre line, edge lines
+      s.albedo = vec3f(0.11, 0.11, 0.115) * (0.9 + 0.2 * noise(uv * 3.0));
+      let centre = abs(uv.y - L * 0.5) < 0.07 && fract(uv.x / 6.0) < 0.5 && L > 5.5;
+      let edges = abs(uv.y - 0.5) < 0.07 || abs(uv.y - (L - 0.5)) < 0.07;
+      if (centre || edges) { s.albedo = vec3f(0.62, 0.62, 0.60); }
+    }
+    case 10u: {  // rail deck: ballast with two tracks
+      s.albedo = vec3f(0.20, 0.18, 0.16) * (0.8 + 0.3 * noise(uv * 6.0));
+      let d = abs(uv.y - L * 0.5);
+      if (abs(d - 2.0) < 0.75 && fract(uv.x / 0.6) < 0.35) { s.albedo = vec3f(0.16, 0.12, 0.09); }
+      if (abs(abs(d - 2.0) - 0.72) < 0.05) { s.albedo = vec3f(0.35, 0.33, 0.32); s.spec = 0.6; }
+    }
     default: {   // grey metal roof
       let rib = smoothstep(0.4, 0.5, abs(fract(uv.x / 0.4) - 0.5));
       s.albedo = mix(vec3f(0.30, 0.31, 0.32), vec3f(0.20, 0.21, 0.22), rib);

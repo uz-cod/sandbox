@@ -8,6 +8,7 @@
 @group(0) @binding(3) var normalTexT: texture_2d<f32>;
 @group(0) @binding(5) var waterTexT: texture_2d<f32>;
 @group(0) @binding(6) var linSampT: sampler;
+@group(0) @binding(12) var landTexT: texture_2d<f32>;
 
 struct Tree { pos: vec4f, info: vec4f };          // xyz base, height | type, hue, rotation, fade
 @group(0) @binding(10) var<storage, read_write> trees: array<Tree>;
@@ -30,6 +31,11 @@ const HOUSE_SIDE: u32 = 572u;         // 2 * HOUSE_R / HOUSE_CELL
 const HOUSE_MAX: u32 = 120000u;               // the DSM already contains the canopy: plant trees partly "in" it
 
 fn h2(c: vec2f, k: f32) -> f32 { return hash2(c * 1.37 + vec2f(k * 17.3, k * 5.1)) * 0.5 + 0.5; }
+fn landT(xz: vec2f) -> vec2f {
+  let wuv = ((xz - F.terr.xy) / F.terr.z + 0.5) / F.terr.w;
+  if (any(wuv < vec2f(0.0)) || any(wuv > vec2f(1.0))) { return vec2f(0.0); }
+  return textureSampleLevel(landTexT, linSampT, wuv, 0.0).rg;
+}
 fn waterUrban(xz: vec2f) -> vec3f {
   let wuv = ((xz - F.terr.xy) / F.terr.z + 0.5) / F.terr.w;
   if (any(wuv < vec2f(0.0)) || any(wuv > vec2f(1.0))) { return vec3f(0.0); }
@@ -55,7 +61,7 @@ fn plant(cellXZ: vec2f, cell: f32, near: bool) -> Tree {
   let wu = waterUrban(xz);
   // towns have no forest, except their parks (scattered park trees)
   let townW = urbanWeight(vec3f(xz.x, h, xz.y), nb, wu.b);
-  let park = parkWeight(xz) * smoothstep(0.1, 0.3, townW);
+  let park = parkWeight(landT(xz).g) * smoothstep(0.05, 0.3, townW + landT(xz).g);
   let w = max(zw.x * (1.0 - zw.y) * (1.0 - zw.z) * (1.0 - smoothstep(0.15, 0.4, townW)), park * 0.35);
   if (h2(cellXZ, 3.0) > w * 0.9) { return t; }
   if (wu.r > 0.2) { return t; }
@@ -120,8 +126,9 @@ fn csHouses(@builtin(global_invocation_id) id: vec3u) {
   let wu = waterUrban(xz);
   if (wu.r > 0.05) { return; }
   let u = urbanWeight(vec3f(xz.x, h, xz.y), nb, wu.b);
-  if (parkWeight(xz) > 0.5) { return; }                                  // parks and fields stay open
-  let ind = industryWeight(xz, h, nb.y) * smoothstep(0.1, 0.4, u);
+  let land = landT(xz);
+  if (parkWeight(land.g) > 0.5) { return; }                              // parks, gardens, pitches stay open
+  let ind = industryWeight(land.r, nb.y);
   if (ind > 0.5) {
     // industrial estate: one large shed per 4x4 block of cells
     if (u32(cellXZ.x) % 4u != 0u || u32(cellXZ.y) % 4u != 0u) { return; }
