@@ -14,6 +14,7 @@ export const PEAKS = [
   { id: 'coltignone', name: 'Monte Coltignone', lat: 45.88561, lon: 9.38902, elev: 1471, radius: 450, look: { lat: 45.85, lon: 9.40 } },
   { id: 'monte-barro', name: 'Monte Barro', lat: 45.83079, lon: 9.38021, elev: 922, radius: 120, look: { lat: 45.87, lon: 9.40 } },
   { id: 'moregallo', name: 'Moregallo', lat: 45.86640, lon: 9.34006, elev: 1276, radius: 120, look: { lat: 45.885, lon: 9.40 } },
+  { id: 'due-mani', name: 'Monte Due Mani', lat: 45.89936, lon: 9.44968, elev: 1666, radius: 150, look: LECCO },
 ];
 
 // Crop: 25 x 25 km square centred here (local equirectangular projection, metres).

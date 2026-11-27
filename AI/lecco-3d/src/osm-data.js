@@ -74,8 +74,8 @@ export async function loadOsm() {
     p += n;
   }
   // itinerary segments: flagged, carry difficulty and the bit of their summit
-  // selection bits: summits 0..7, trail hubs 8..15
-  const peakBit = (id) => { const k = PEAKS.findIndex((pk) => pk.id === id); return k >= 0 ? 1 << k : 1 << (8 + PLACES.findIndex((pl) => pl.id === id)); };
+  // selection bits (attr bits 16..31): summits 0..9, trail hubs 10..15
+  const peakBit = (id) => { const k = PEAKS.findIndex((pk) => pk.id === id); return k >= 0 ? 1 << k : 1 << (10 + PLACES.findIndex((pl) => pl.id === id)); };
   for (const it of [...its, ...pits.map((p) => ({ ...p, peak: p.place }))]) {
     const dir = it.end > it.start ? 1 : -1;
     const d = Math.max(0, DIFFS.indexOf(it.diff));

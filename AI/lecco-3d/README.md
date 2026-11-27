@@ -16,7 +16,7 @@ No server needed.
 | W A S D | move · E/Space up · Q/C down |
 | Shift / Alt | faster / slower · mouse wheel: speed multiplier |
 | ← → ↑ ↓ | turn |
-| 1–8 | jump to a summit |
+| 1–9 | jump to a summit (a slow 360° panorama starts; P toggles it, any input stops it) |
 | select a summit | its marked itineraries light up (colour = CAI difficulty T/E/EE/EEA) with trailhead pins |
 | panel: trailhead name · `sali` · `scendi` | fly to the trailhead · walk up to the summit · walk down |
 | V | overview of the selected summit and all its trailheads |

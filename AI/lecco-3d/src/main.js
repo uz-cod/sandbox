@@ -2,7 +2,7 @@
 import { loadTerrain, meta, groundHeight, toLatLon } from './terrain-data.js';
 import { loadOsm, osmMeta, reversed } from './osm-data.js';
 import { createRenderer } from './renderer.js';
-import { camera, attachInput, placeCamera, updateCamera, follow, startFollow, stopFollow } from './camera.js';
+import { camera, attachInput, placeCamera, updateCamera, follow, startFollow, stopFollow, auto, startPanorama, startOrbit, stopAuto } from './camera.js';
 
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
@@ -92,6 +92,7 @@ function selectPlace(k) {
   const x = pl.x + Math.sin(ang) * dist, z = pl.z - Math.cos(ang) * dist;
   const y = pl.y + r * 0.9;
   placeCamera(x, y, z, Math.atan2(pl.x - x, -(pl.z - z)), Math.atan2(pl.y - y, dist));
+  panoramaHint(() => startOrbit(pl.x, pl.z));
   const box = $('trails');
   box.innerHTML = '';
   $('trailsHead').innerHTML = `Sentieri da ${esc(pl.name)} <span class="dim">· ${pl.its.length}</span>`;
@@ -133,6 +134,7 @@ function flyToTrailhead(t, p) {
   const y = Math.max(groundHeight(x, z), t.y) + 140;
   const yaw = Math.atan2(t.x + dx * 0.25 - x, -(t.z + dz * 0.25 - z));
   placeCamera(x, y, z, yaw, Math.atan2(t.y - y, Math.hypot(t.x - x, t.z - z)) * 0.7);
+  startOrbit(t.x, t.z);
 }
 function overview(i) {
   endFollow();
@@ -145,6 +147,13 @@ function overview(i) {
   const x = p.x + Math.sin(ang) * dist, z = p.z - Math.cos(ang) * dist;
   const y = p.h + r * 1.1;
   placeCamera(x, y, z, Math.atan2(p.x - x, -(p.z - z)), Math.atan2(p.h - r * 0.25 - y, dist));
+  startOrbit(p.x, p.z);
+}
+
+let hinted = false;
+function panoramaHint(start) {
+  start();
+  if (!hinted) { toast('Panorama a 360° · muovi il mouse o premi un tasto per fermarlo (P per ripartire)'); hinted = true; }
 }
 
 // Floating labels over the pins (updated a few times per second, outside the render loop)
@@ -221,6 +230,7 @@ function flyToHut(h) {
   const y = Math.max(best, h.base) + 22;
   placeCamera(bx, y, bz, Math.atan2(h.x - bx, -(h.z - bz)), Math.atan2(h.base + 4 - y, Math.hypot(h.x - bx, h.z - bz)));
   toast(`${h.name} · ${Math.round(h.base)} m`);
+  startOrbit(h.x, h.z);
 }
 let toastT = 0;
 function toast(text) {
@@ -284,6 +294,8 @@ function gotoPeak(i) {
   activePeak = i; activePlace = -1;
   renderer?.setSelection(osm ? osm.peakBit(p.id) : 0);
   showTrails(i);
+  camera.pitch = Math.max(camera.pitch, -0.12);
+  panoramaHint(startPanorama);
 }
 
 function buildUI() {
@@ -308,6 +320,7 @@ function buildUI() {
     if (k >= 0 && k < peaks.length) gotoPeak(k);
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
     if (e.code === 'KeyV' && activePeak >= 0) overview(activePeak);
+    if (e.code === 'KeyP' && !follow.active) { if (auto.mode) stopAuto(); else startPanorama(); }
     if (e.code === 'KeyB') { opts.trees = !opts.trees; renderer.setTrees(opts.trees); toast(opts.trees ? 'Boschi attivi' : 'Boschi nascosti'); }
     if (follow.active) {
       if (e.code === 'KeyF' || e.code === 'Escape') endFollow();

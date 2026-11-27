@@ -49,6 +49,34 @@ export function attachInput(canvas) {
   }, { passive: false });
 }
 
+// ------------------------------------------------------------------ panorama
+// mode 1: turn on the spot (summits), mode 2: orbit around a point (hubs, huts, overviews).
+// One slow full turn; any mouse or movement input stops it.
+export const auto = { mode: 0, cx: 0, cz: 0, r: 0, ang: 0, left: 0 };
+const TURN = Math.PI * 2, TURN_TIME = 60;
+export function startPanorama() { auto.mode = 1; auto.left = TURN; }
+export function startOrbit(cx, cz) {
+  auto.mode = 2; auto.left = TURN; auto.cx = cx; auto.cz = cz;
+  auto.r = Math.hypot(camera.x - cx, camera.z - cz) || 1;
+  auto.ang = Math.atan2(camera.x - cx, -(camera.z - cz));
+}
+export function stopAuto() { auto.mode = 0; }
+function updateAuto(dt) {
+  const done = TURN - auto.left;
+  // ease in and out over the first / last 15 degrees
+  const ease = Math.min(1, 0.15 + done / 0.26, 0.15 + auto.left / 0.26);
+  const step = Math.min(auto.left, (TURN / TURN_TIME) * ease * dt);
+  auto.left -= step;
+  if (auto.mode === 1) camera.yaw += step;
+  else {
+    auto.ang += step;
+    camera.x = auto.cx + Math.sin(auto.ang) * auto.r;
+    camera.z = auto.cz - Math.cos(auto.ang) * auto.r;
+    camera.yaw = Math.atan2(auto.cx - camera.x, -(auto.cz - camera.z));
+  }
+  if (auto.left <= 0) auto.mode = 0;
+}
+
 export function placeCamera(x, y, z, yaw, pitch) {
   camera.x = x; camera.y = y; camera.z = z;
   camera.yaw = yaw; camera.pitch = pitch;
@@ -138,7 +166,11 @@ function updateFollow(dt) {
 }
 
 export function updateCamera(dt) {
-  if (follow.active) { updateFollow(dt); return; }
+  if (follow.active) { auto.mode = 0; updateFollow(dt); return; }
+  if (auto.mode) {
+    if (input.mdx || input.mdy || input.f || input.b || input.l || input.r || input.u || input.d || input.tl || input.tr || input.tu || input.td) auto.mode = 0;
+    else { updateAuto(dt); camera.agl = camera.y - groundHeight(camera.x, camera.z); return; }
+  }
   camera.yaw += input.mdx * SENS + (input.tr - input.tl) * 1.4 * dt;
   camera.pitch -= input.mdy * SENS - (input.tu - input.td) * 1.0 * dt;
   input.mdx = 0; input.mdy = 0;
