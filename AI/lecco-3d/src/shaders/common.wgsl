@@ -14,6 +14,7 @@ struct Frame {
   misc: vec4f,           // snow line, relief scale, debug view, unused
   grid: vec4f,           // OSM feature grid: origin x, origin z, cell size, cells per side
   clouds: vec4f,         // random offset x, z, coverage (0 = clear), unused
+  sel: vec4f,            // selected itinerary segment range [x, y), profile cursor x, z
 };
 
 @group(0) @binding(0) var<uniform> F: Frame;

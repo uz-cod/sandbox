@@ -6,11 +6,11 @@
 @group(0) @binding(8) var<storage, read> segAttr: array<u32>;
 @group(0) @binding(9) var<storage, read> cells: array<u32>;
 
-struct Feat { edge: f32, center: f32, halfW: f32, attr: u32, padW: f32, padH: f32, hlD: f32, hlAttr: u32 };
+struct Feat { edge: f32, center: f32, halfW: f32, attr: u32, padW: f32, padH: f32, hlD: f32, hlAttr: u32, selD: f32 };
 
 fn features(xz: vec2f, wantTrails: bool) -> Feat {
   var f: Feat;
-  f.edge = 1e9; f.center = 1e9; f.halfW = 0.0; f.attr = 0u; f.padW = 0.0; f.padH = 0.0; f.hlD = 1e9; f.hlAttr = 0u;
+  f.edge = 1e9; f.center = 1e9; f.halfW = 0.0; f.attr = 0u; f.padW = 0.0; f.padH = 0.0; f.hlD = 1e9; f.hlAttr = 0u; f.selD = 1e9;
   let sel = u32(F.misc.w);
   let g = (xz - F.grid.xy) / F.grid.z;
   let n = F.grid.w;
@@ -40,6 +40,7 @@ fn features(xz: vec2f, wantTrails: bool) -> Feat {
       let h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
       let dc = length(pa - ba * h);
       if (isHL) {
+        if (f32(it) >= F.sel.x && f32(it) < F.sel.y) { f.selD = min(f.selD, dc); }
         if (dc < f.hlD) { f.hlD = dc; f.hlAttr = at; }
       } else {
         let hw = f32(at >> 16u) * 0.001;

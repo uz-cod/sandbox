@@ -76,16 +76,18 @@ export async function loadOsm() {
   // itinerary segments: flagged, carry difficulty and the bit of their summit
   // selection bits (attr bits 16..31): summits 0..9, trail hubs 10..15
   const peakBit = (id) => { const k = PEAKS.findIndex((pk) => pk.id === id); return k >= 0 ? 1 << k : 1 << (10 + PLACES.findIndex((pl) => pl.id === id)); };
-  for (const it of [...its, ...pits.map((p) => ({ ...p, peak: p.place }))]) {
+  for (const it of [...its, ...pits]) {
     const dir = it.end > it.start ? 1 : -1;
     const d = Math.max(0, DIFFS.indexOf(it.diff));
+    it.segA = s;                                   // contiguous segment range: lets the shader emphasise one itinerary
     for (let i = it.start; i !== it.end; i += dir) {
       const a = i, b = i + dir;
       segs.set([routePts[2 * a], routePts[2 * a + 1], routePts[2 * b], routePts[2 * b + 1]], s * 4);
-      attr[s] = HL_FLAG | (d << 9) | (peakBit(it.peak) << 16);
+      attr[s] = HL_FLAG | (d << 9) | (peakBit(it.peak ?? it.place) << 16);
       half[s] = HL_MARGIN - BORDER - 0.5;
       s++;
     }
+    it.segB = s;
   }
 
   // ---------------------------------------------------------------- pads (huts, crosses)

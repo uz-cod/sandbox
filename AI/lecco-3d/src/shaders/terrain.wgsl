@@ -222,7 +222,19 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4f {
       let inCore = 1.0 - smoothstep(core - aa, core + aa, ft.hlD);
       let inOut = 1.0 - smoothstep(outl - aa, outl + aa, ft.hlD);
       hlCol = mix(vec3f(0.02, 0.02, 0.02), c, inCore / max(inOut, 1e-3));
-      hlA = inOut * 0.92 * smoothstep(30.0, 140.0, dist);   // near the eye the real trail shows
+      let anySel = F.sel.y > F.sel.x;
+      hlA = inOut * select(0.92, 0.45, anySel) * smoothstep(30.0, 140.0, dist);   // near the eye the real trail shows
+      if (ft.selD < 1e8) {
+        // the selected itinerary: wider, with a white casing, on top of the others
+        let sc = clamp(pfx * 2.0, 1.0, 45.0);
+        let so = sc + clamp(pfx * 1.3, 0.4, 16.0);
+        let sCore = 1.0 - smoothstep(sc - aa, sc + aa, ft.selD);
+        let sOut = 1.0 - smoothstep(so - aa, so + aa, ft.selD);
+        if (sOut > 0.0) {
+          hlCol = mix(vec3f(1.0, 1.0, 1.0) * 1.2, c, sCore / max(sOut, 1e-3));
+          hlA = max(hlA, sOut * 0.97 * smoothstep(20.0, 90.0, dist));
+        }
+      }
     }
     if (dist < 6000.0) {
     if (ft.padW > 0.0) {
@@ -292,6 +304,12 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4f {
 
   if (F.misc.z > 0.5) { col = surf.dbg * (0.3 + 0.7 * ndl); }
   col = applyFog(col, p);
+  if (F.sel.y > F.sel.x) {
+    let cd = distance(p.xz, F.sel.zw);
+    let rr = clamp(pfx * 7.0, 3.0, 200.0);
+    let ring = (1.0 - smoothstep(rr * 0.75, rr, cd)) * smoothstep(rr * 0.35, rr * 0.55, cd);
+    if (ring > 0.0) { hlCol = mix(hlCol, vec3f(1.6, 1.3, 0.3), ring); hlA = max(hlA, ring); }
+  }
   if (hlA > 0.0) {
     // itinerary overlay: lit softly, only partly fogged so it reads from far away
     let lit = hlCol * (1.1 + 0.9 * ndl * sunVis);

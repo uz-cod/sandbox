@@ -1,7 +1,8 @@
 // Entry point: load data, build the renderer, wire UI and run the frame loop.
-import { loadTerrain, meta, groundHeight, toLatLon } from './terrain-data.js';
+import { loadTerrain, meta, groundHeight, groundHeightCubic, toLatLon } from './terrain-data.js';
 import { loadOsm, osmMeta, reversed } from './osm-data.js';
 import { createRenderer } from './renderer.js';
+import { perspectiveReverseZ, viewFromYawPitch, multiply } from './math.js';
 import { camera, attachInput, placeCamera, updateCamera, follow, startFollow, stopFollow, auto, startPanorama, startOrbit, stopAuto } from './camera.js';
 
 const params = new URLSearchParams(location.search);
@@ -67,11 +68,7 @@ function showTrails(i) {
         it.timeSrc === 'osm' ? 'tempo da OSM' : 'tempo stimato (4 km/h, 400 m/h)', ...it.stops.map((s) => `${s.name} a ${fmtKm(s.along)}`)].filter(Boolean).join('\n');
       r.innerHTML = `<span class="r">${esc(it.ref || '–')}</span><span class="d d${esc(it.diff || 'x')}">${esc(it.diff || '?')}</span>`
         + `<span class="n">${fmtKm(it.length)} · +${it.dplus} m · ${fmtTime(it.minutes)}${it.timeSrc === 'osm' ? '' : '*'}</span>`;
-      const up = document.createElement('button'); up.textContent = 'sali'; up.title = 'Cammina dalla partenza alla vetta';
-      const down = document.createElement('button'); down.textContent = 'scendi'; down.title = 'Cammina dalla vetta alla partenza';
-      up.addEventListener('click', (e) => { e.stopPropagation(); beginFollow(it); up.blur(); });
-      down.addEventListener('click', (e) => { e.stopPropagation(); beginFollow(reversed(it)); down.blur(); });
-      r.append(up, down);
+      r.addEventListener('click', (e) => { e.stopPropagation(); selectItinerary(it, r, t.name, p.name); });
       row.appendChild(r);
     }
     box.appendChild(row);
@@ -85,6 +82,7 @@ function selectPlace(k) {
   const pl = osm.places[k];
   endFollow();
   activePeak = -1; activePlace = k;
+  clearItinerary();
   document.querySelectorAll('#peaks button').forEach((b) => b.classList.remove('active'));
   document.querySelectorAll('#places button').forEach((b, j) => b.classList.toggle('active', j === k));
   renderer.setSelection(osm.peakBit(pl.id));
@@ -108,11 +106,7 @@ function selectPlace(k) {
     r2.title = [it.name, via.length ? `passa da ${via.join(', ')}` : '', 'tempo stimato (4 km/h, +400 m/h, −800 m/h)', ...it.stops.map((s) => `${s.name} a ${fmtKm(s.along)}`)].filter(Boolean).join('\n');
     r2.innerHTML = `<span class="r">${esc(it.ref || '–')}</span><span class="d d${esc(it.diff || 'x')}">${esc(it.diff || '?')}</span>`
       + `<span class="n"><b>→ ${esc(it.dest)}</b>${via.length ? ` <span class="dim">via ${esc(via.join(', '))}</span>` : ''}<br>${fmtKm(it.length)} · +${it.dplus} −${it.dminus} m · ${fmtTime(it.minutes)}*</span>`;
-    const go = document.createElement('button'); go.textContent = 'vai'; go.title = `Cammina da ${pl.short} verso ${it.dest}`;
-    const back = document.createElement('button'); back.textContent = 'torna'; back.title = `Cammina da ${it.dest} a ${pl.short}`;
-    go.addEventListener('click', (e) => { e.stopPropagation(); beginFollow({ ...it, hubName: pl.short }); go.blur(); });
-    back.addEventListener('click', (e) => { e.stopPropagation(); beginFollow({ ...reversed(it), hubName: pl.short, back: true }); back.blur(); });
-    r2.append(go, back);
+    r2.addEventListener('click', (e) => { e.stopPropagation(); selectItinerary(it, r2, pl.short, it.dest); });
     head.appendChild(r2);
   }
   box.appendChild(head);
@@ -127,6 +121,126 @@ function selectPlace(k) {
     return { t: { x, y, z }, el };
   };
   labels = [mk(pl.name, pl.x, pl.y, pl.z, false), ...pl.its.map((it) => mk(it.dest, it.ex, it.h1, it.ez, true))];
+}
+
+// ------------------------------------------------------------------ itinerary: framing + elevation profile
+let selRow = null, profile = null;
+function sampleItinerary(it) {
+  const P = osm.routePts, dir = it.end > it.start ? 1 : -1;
+  const out = [];
+  let s = 0, next = 0;
+  for (let i = it.start; ; i += dir) {
+    const x = P[2 * i], z = P[2 * i + 1];
+    if (i !== it.start) s += Math.hypot(x - P[2 * (i - dir)], z - P[2 * (i - dir) + 1]);
+    if (s >= next || i === it.end) { out.push({ s, x, z, h: groundHeightCubic(x, z) }); next = s + 15; }
+    if (i === it.end) break;
+  }
+  return out;
+}
+function clearItinerary() {
+  selRow?.classList.remove('sel'); selRow = null; profile = null;
+  renderer?.setItinerary(0, 0); renderer?.setCursor(1e9, 1e9);
+  $('profile').hidden = true;
+}
+function selectItinerary(it, row, fromName, toName) {
+  endFollow(); stopAuto();
+  selRow?.classList.remove('sel'); selRow = row; row.classList.add('sel');
+  const pts = sampleItinerary(it);
+  profile = { it, pts, fromName, toName };
+  renderer.setItinerary(it.segA, it.segB);
+  renderer.setCursor(1e9, 1e9);
+  drawProfile();
+  frameItinerary(pts);
+}
+// Look at the whole route from the side of its main axis (southern side preferred), then refine
+// with the real projection until start and end fit the free screen area (left panel, profile).
+const fp = { P: new Float32Array(16), V: new Float32Array(16), VP: new Float32Array(16) };
+function frameItinerary(pts) {
+  let cx = 0, cz = 0, ch = 0;
+  for (const p of pts) { cx += p.x; cz += p.z; ch += p.h; }
+  cx /= pts.length; cz /= pts.length; ch /= pts.length;
+  let sxx = 0, szz = 0, sxz = 0;
+  for (const p of pts) { const dx = p.x - cx, dz = p.z - cz; sxx += dx * dx; szz += dz * dz; sxz += dx * dz; }
+  const a = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+  let vx = -Math.sin(a), vz = Math.cos(a);
+  if (vz < 0) { vx = -vx; vz = -vz; }
+  const W = canvas.clientWidth, H = canvas.clientHeight, aspect = W / H;
+  const tanV = Math.tan(Math.PI / 6), tanH = tanV * aspect;
+  // free area in NDC: right of the panel, above the profile window (both may be hidden on phones)
+  const ui = $('ui').getBoundingClientRect(), pr = $('profile').getBoundingClientRect();
+  const fx0 = W > 700 ? -1 + 2 * (ui.right + 20) / W : -0.92, fx1 = 0.94;
+  const fy0 = W > 700 ? -1 + 2 * (H - pr.top + 20) / H : -0.6, fy1 = 0.86;
+  const el = (34 * Math.PI) / 180;
+  let ext = 0;
+  for (const p of pts) ext = Math.max(ext, Math.hypot(p.x - cx, p.z - cz));
+  let dist = Math.max(450, ext * 2.2), yawOff = 0, pitchOff = 0;
+  let x = 0, y = 0, z = 0, yaw = 0, pitch = 0;
+  perspectiveReverseZ(fp.P, Math.PI / 3, aspect, 0.5);
+  for (let iter = 0; iter < 6; iter++) {
+    x = cx + vx * dist * Math.cos(el); z = cz + vz * dist * Math.cos(el);
+    y = Math.max(ch + dist * Math.sin(el), groundHeight(x, z) + 150);
+    yaw = Math.atan2(cx - x, -(cz - z)) + yawOff;
+    pitch = Math.atan2(ch - y, Math.hypot(cx - x, cz - z)) + pitchOff;
+    viewFromYawPitch(fp.V, yaw, pitch); multiply(fp.VP, fp.P, fp.V);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    const M = fp.VP;
+    for (let k = 0; k < pts.length; k += 2) {
+      const X = pts[k].x - x, Y = pts[k].h - y, Z = pts[k].z - z;
+      const w = M[3] * X + M[7] * Y + M[11] * Z + M[15];
+      if (w <= 1) { x0 = -9; x1 = 9; y0 = -9; y1 = 9; break; }
+      const nx = (M[0] * X + M[4] * Y + M[8] * Z + M[12]) / w, ny = (M[1] * X + M[5] * Y + M[9] * Z + M[13]) / w;
+      x0 = Math.min(x0, nx); x1 = Math.max(x1, nx); y0 = Math.min(y0, ny); y1 = Math.max(y1, ny);
+    }
+    const s = Math.max((x1 - x0) / (fx1 - fx0), (y1 - y0) / (fy1 - fy0));
+    dist = Math.max(400, dist * Math.min(3, Math.max(0.4, s * 1.08)));
+    yawOff += Math.atan(((x0 + x1) / 2 - (fx0 + fx1) / 2) * tanH) * 0.9;
+    pitchOff += Math.atan(((y0 + y1) / 2 - (fy0 + fy1) / 2) * tanV) * 0.9;
+  }
+  placeCamera(x, y, z, yaw, pitch);
+}
+function drawProfile() {
+  const box = $('profile'), svg = $('profSvg');
+  const { it, pts, fromName, toName } = profile;
+  box.hidden = false;
+  const W = svg.clientWidth || 400, H = svg.clientHeight || 150, ml = 40, mr = 10, mt = 14, mb = 22;
+  const L = pts[pts.length - 1].s;
+  let hMin = Infinity, hMax = -Infinity;
+  for (const p of pts) { hMin = Math.min(hMin, p.h); hMax = Math.max(hMax, p.h); }
+  const pad = Math.max(30, (hMax - hMin) * 0.12);
+  const lo = Math.floor((hMin - pad) / 100) * 100, hi = Math.ceil((hMax + pad) / 100) * 100;
+  const X = (s) => ml + (s / L) * (W - ml - mr), Y = (h) => mt + (1 - (h - lo) / (hi - lo)) * (H - mt - mb);
+  const step = (hi - lo) > 900 ? 500 : (hi - lo) > 400 ? 200 : 100;
+  let g = '';
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) g += `<line x1="${ml}" x2="${W - mr}" y1="${Y(v)}" y2="${Y(v)}" class="gl"/><text x="${ml - 5}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
+  const kmStep = L > 6000 ? 2000 : L > 2500 ? 1000 : 500;
+  for (let s = kmStep; s < L; s += kmStep) g += `<text x="${X(s)}" y="${H - 6}" text-anchor="middle">${(s / 1000).toFixed(s % 1000 ? 1 : 0)} km</text>`;
+  const line = pts.map((p) => `${X(p.s).toFixed(1)},${Y(p.h).toFixed(1)}`).join(' ');
+  const col = ({ T: '#4dcc66', E: '#ffb826', EE: '#f24533', EEA: '#b366ff' })[it.diff] || '#bfbfbf';
+  const stops = (it.stops || []).map((st, k) => {
+    const sx = X(st.along), right = sx > W * 0.6;
+    return `<line x1="${sx}" x2="${sx}" y1="${mt}" y2="${H - mb}" class="st"/><text x="${sx + (right ? -3 : 3)}" y="${mt + 9 + (k % 2) * 11}" text-anchor="${right ? 'end' : 'start'}" class="stt">${esc(st.name)}</text>`;
+  }).join('');
+  svg.innerHTML = `${g}<polygon points="${ml},${H - mb} ${line} ${W - mr},${H - mb}" fill="${col}" fill-opacity=".22"/>`
+    + `<polyline points="${line}" fill="none" stroke="${col}" stroke-width="2"/>${stops}`
+    + `<circle cx="${X(0)}" cy="${Y(pts[0].h)}" r="3.5" class="pt"/><circle cx="${X(L)}" cy="${Y(pts[pts.length - 1].h)}" r="3.5" class="pt"/>`
+    + `<g id="profCur" style="display:none"><line y1="${mt}" y2="${H - mb}" class="cur"/><circle r="4" class="curp"/><text class="curt" y="${mt + 9}"></text></g>`;
+  let up = 0, dn = 0;
+  for (let k = 1; k < pts.length; k++) { const d = pts[k].h - pts[k - 1].h; if (d > 0) up += d; else dn -= d; }
+  $('profTitle').innerHTML = `<span class="r">${esc(it.ref || '–')}</span><span class="d d${esc(it.diff || 'x')}">${esc(it.diff || '?')}</span> ${esc(fromName)} → ${esc(toName)}`;
+  $('profStats').textContent = `${fmtKm(L)} · +${Math.round(up)} m −${Math.round(dn)} m · ${Math.round(pts[0].h)} → ${Math.round(pts[pts.length - 1].h)} m · max ${Math.round(hMax)} m · ${fmtTime(it.minutes)}${it.timeSrc === 'osm' ? '' : ' (stima)'}`;
+  svg.onmousemove = (e) => {
+    const r = svg.getBoundingClientRect();
+    const s = Math.min(L, Math.max(0, ((e.clientX - r.left - ml) / (W - ml - mr)) * L));
+    let k = 0; while (k < pts.length - 1 && pts[k + 1].s < s) k++;
+    const p = pts[k];
+    const c = $('profCur'); c.style.display = '';
+    c.querySelector('line').setAttribute('x1', X(p.s)); c.querySelector('line').setAttribute('x2', X(p.s));
+    c.querySelector('circle').setAttribute('cx', X(p.s)); c.querySelector('circle').setAttribute('cy', Y(p.h));
+    const t = c.querySelector('text'); t.textContent = `${fmtKm(p.s)} · ${Math.round(p.h)} m`;
+    t.setAttribute('x', X(p.s) + (X(p.s) > W * 0.7 ? -6 : 6)); t.setAttribute('text-anchor', X(p.s) > W * 0.7 ? 'end' : 'start');
+    renderer.setCursor(p.x, p.z);
+  };
+  svg.onmouseleave = () => { $('profCur').style.display = 'none'; renderer.setCursor(1e9, 1e9); };
 }
 
 // Camera views
@@ -295,6 +409,7 @@ function gotoPeak(i) {
   document.querySelectorAll('#peaks button').forEach((b, k) => b.classList.toggle('active', k === i));
   document.querySelectorAll('#places button').forEach((b) => b.classList.remove('active'));
   activePeak = i; activePlace = -1;
+  clearItinerary();
   renderer?.setSelection(osm ? osm.peakBit(p.id) : 0);
   showTrails(i);
   camera.pitch = Math.max(camera.pitch, -0.12);
@@ -323,6 +438,7 @@ function buildUI() {
     if (k >= 0 && k < peaks.length) gotoPeak(k);
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
     if (e.code === 'KeyV' && activePeak >= 0) overview(activePeak);
+    if (e.code === 'Escape' && profile && !follow.active) clearItinerary();
     if (e.code === 'KeyP' && !follow.active) { if (auto.mode) stopAuto(); else startPanorama(); }
     if (e.code === 'KeyN') {
       const steps = [0, 0.2, 0.35, 0.5, 0.65];
@@ -342,6 +458,7 @@ function buildUI() {
   $('credits').textContent = `${meta.attribution} · ${osmMeta.attribution}`;
   buildHutSearch();
   buildSpeed();
+  $('profClose').addEventListener('click', (e) => { e.stopPropagation(); clearItinerary(); });
 }
 
 async function main() {
@@ -378,6 +495,11 @@ async function main() {
         if (it) beginFollow(dn ? reversed(it) : it, Number(along) || 0);
       }
       if (params.has('overview')) overview(idx);
+      if (params.has('it')) {
+        const k = Number(params.get('it'));
+        const all = (osm.byPeak.get(peaks[idx].id) || []).flatMap((t) => t.its.map((it) => [it, t.name]));
+        if (all[k]) setTimeout(() => {}, 0), selectItinerary(all[k][0], document.querySelectorAll('#trails .it')[k] || document.body, all[k][1], peaks[idx].name);
+      }
       if (params.has('place')) selectPlace(Number(params.get('place')) || 0);
     }
     status.remove();

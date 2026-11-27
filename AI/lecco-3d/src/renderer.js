@@ -23,7 +23,7 @@ const NEAR = 0.5;
 const TREE_NEAR_MAX = 30000, TREE_FAR_MAX = 200000, HOUSE_MAX = 120000, TREE_STRIDE = 32;   // must match trees-scatter.wgsl
 
 // Frame uniform layout (floats), see struct Frame in common.wgsl
-const U_VIEWPROJ = 0, U_INVVP = 16, U_CAM = 32, U_SUN = 36, U_SUNCOL = 40, U_TERR = 44, U_EXT = 48, U_SCREEN = 52, U_FOG = 56, U_MISC = 60, U_GRID = 64, U_CLOUDS = 68;
+const U_VIEWPROJ = 0, U_INVVP = 16, U_CAM = 32, U_SUN = 36, U_SUNCOL = 40, U_TERR = 44, U_EXT = 48, U_SCREEN = 52, U_FOG = 56, U_MISC = 60, U_GRID = 64, U_CLOUDS = 68, U_SEL = 72;
 
 export async function createRenderer(canvas, { heights, water }, osm, opts) {
   if (!navigator.gpu) throw new Error('WebGPU non disponibile in questo browser.');
@@ -51,7 +51,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   const linSamp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
 
   // ---------------------------------------------------------------- uniforms
-  const frame = new Float32Array(72);
+  const frame = new Float32Array(76);
   const frameBuf = device.createBuffer({ size: frame.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const levelData = new Float32Array(LEVELS * 8);
   const levelBuf = device.createBuffer({ size: levelData.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -65,6 +65,7 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   frame.set([opts.snowLine, opts.relief, opts.debug, 0], U_MISC);
   frame.set(osm.gridInfo, U_GRID);
   frame.set([opts.cloudSeed[0], opts.cloudSeed[1], opts.clouds, 0], U_CLOUDS);
+  frame.set([0, 0, 1e9, 1e9], U_SEL);
   device.queue.writeBuffer(frameBuf, 0, frame);
 
   // ---------------------------------------------------------------- layouts
@@ -452,6 +453,8 @@ export async function createRenderer(canvas, { heights, water }, osm, opts) {
   function setSelection(mask) { frame[U_MISC + 3] = mask; }
   function setTrees(on) { treesOn = on; }
   function setClouds(cov) { frame[U_CLOUDS + 2] = cov; }
+  function setItinerary(a, b) { frame[U_SEL] = a; frame[U_SEL + 1] = b; }
+  function setCursor(x, z) { frame[U_SEL + 2] = x; frame[U_SEL + 3] = z; }
 
-  return { device, resize, render, capture, setSelection, setTrees, setClouds, viewProj: vp, precomputeMs, adapterInfo: adapter.info };
+  return { device, resize, render, capture, setSelection, setTrees, setClouds, setItinerary, setCursor, viewProj: vp, precomputeMs, adapterInfo: adapter.info };
 }

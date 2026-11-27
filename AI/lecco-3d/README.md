@@ -18,9 +18,9 @@ No server needed.
 | ← → ↑ ↓ | turn |
 | 1–9 | jump to a summit (a slow 360° panorama starts; P toggles it, any input stops it) |
 | select a summit | its marked itineraries light up (colour = CAI difficulty T/E/EE/EEA) with trailhead pins |
-| panel: trailhead name · `sali` · `scendi` | fly to the trailhead · walk up to the summit · walk down |
+| panel: trailhead name · itinerary row | fly to the trailhead · select the itinerary: the camera frames it from start to end, it is drawn wider with a white casing, and an elevation profile opens (hover it to see the point on the map) |
 | V | overview of the selected summit and all its trailheads |
-| Località (◆) | trail hubs (Versasio cable-car station, Piani d'Erna): every marked route through the hub with its destination, summits on the way, +/− elevation and time; `vai` / `torna` walk it |
+| Località (◆) | trail hubs (Versasio cable-car station, Piani d'Erna): every marked route through the hub with its destination, summits on the way, +/− elevation and time; click one to frame it with its profile |
 | / | search huts and bivouacs by name, Enter flies there |
 | (on a trail) 2–12 km/h · +/− | walking pace |
 | B | forests on/off |
