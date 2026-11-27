@@ -15,6 +15,11 @@ export const PEAKS = [
   { id: 'monte-barro', name: 'Monte Barro', lat: 45.83079, lon: 9.38021, elev: 922, radius: 120, look: { lat: 45.87, lon: 9.40 } },
   { id: 'moregallo', name: 'Moregallo', lat: 45.86640, lon: 9.34006, elev: 1276, radius: 120, look: { lat: 45.885, lon: 9.40 } },
   { id: 'due-mani', name: 'Monte Due Mani', lat: 45.89936, lon: 9.44968, elev: 1666, radius: 150, look: LECCO },
+  { id: 'corni-canzo', name: 'Corni di Canzo', lat: 45.86257, lon: 9.32315, elev: 1373, radius: 150, look: LECCO },
+  { id: 'cornizzolo', name: 'Monte Cornizzolo', lat: 45.83707, lon: 9.30193, elev: 1241, radius: 150, look: LECCO },
+  // marked routes pass ~300 m from the top (the last bit is an unnumbered path): reach = 350 m
+  { id: 'pizzo-erna', name: "Pizzo d'Erna", lat: 45.86196, lon: 9.44471, elev: 1366, radius: 150, reach: 350, look: LECCO },
+  { id: 'sasso-cavallo', name: 'Sasso Cavallo', lat: 45.94628, lon: 9.37065, elev: 1923, radius: 150, look: { lat: 45.90, lon: 9.33 } },
 ];
 
 // Crop: 25 x 25 km square centred here (local equirectangular projection, metres).

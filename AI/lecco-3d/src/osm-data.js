@@ -74,8 +74,9 @@ export async function loadOsm() {
     p += n;
   }
   // itinerary segments: flagged, carry difficulty and the bit of their summit
-  // selection bits (attr bits 16..31): summits 0..9, trail hubs 10..15
-  const peakBit = (id) => { const k = PEAKS.findIndex((pk) => pk.id === id); return k >= 0 ? 1 << k : 1 << (10 + PLACES.findIndex((pl) => pl.id === id)); };
+  // selection owner id (attr bits 16..23): summits 1..127, trail hubs 128..255; 0 = nothing selected.
+  // Itinerary segments are duplicated per owner, so an id (not a bit mask) is enough.
+  const peakBit = (id) => { const k = PEAKS.findIndex((pk) => pk.id === id); return k >= 0 ? 1 + k : 128 + PLACES.findIndex((pl) => pl.id === id); };
   for (const it of [...its, ...pits]) {
     const dir = it.end > it.start ? 1 : -1;
     const d = Math.max(0, DIFFS.indexOf(it.diff));

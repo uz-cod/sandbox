@@ -33,7 +33,7 @@ fn features(xz: vec2f, wantTrails: bool) -> Feat {
     } else if (wantTrails) {
       let at = segAttr[it];
       let isHL = (at & 256u) != 0u;
-      if (isHL && ((at >> 16u) & sel) == 0u) { continue; }   // itinerary of a summit not selected
+      if (isHL && ((at >> 16u) & 255u) != sel) { continue; }   // itinerary of a summit / hub not selected
       let s = segs[it];
       let pa = xz - s.xy;
       let ba = s.zw - s.xy;

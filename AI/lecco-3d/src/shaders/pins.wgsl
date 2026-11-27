@@ -1,8 +1,8 @@
 // Trailhead pins: camera-facing billboards (pole + round head), sized to stay readable from far
-// away, shown only for the selected summit (summit bit & F.misc.w).
+// away, shown only for the selected summit / hub (owner id == F.misc.w).
 
 struct PinIn {
-  @location(0) pos: vec4f,    // x, y (ground), z, summit bit
+  @location(0) pos: vec4f,    // x, y (ground), z, selection owner id
   @location(1) col: vec4f,    // rgb, kind (0 trailhead, 1 junction)
 };
 struct PinOut {
@@ -19,7 +19,7 @@ fn vsPin(@builtin(vertex_index) vid: u32, inst: PinIn) -> PinOut {
   var o: PinOut;
   o.uv = c;
   o.col = inst.col;
-  let visible = (u32(inst.pos.w) & u32(F.misc.w)) != 0u;
+  let visible = u32(inst.pos.w) == u32(F.misc.w) && F.misc.w > 0.5;
   let base = inst.pos.xyz;
   let toCam = F.camPos.xyz - base;
   let dist = length(toCam);

@@ -257,7 +257,7 @@ export function bakeOsm({ quiet = false } = {}) {
     const maxSac = Math.max(0, ...r.wayIds.map((id) => sacOf.get(id) || 0));
     const diff = normCai(r.cai) || ['', 'T', 'E', 'EE', 'EEA', 'EEA', 'EEA'][maxSac] || '';
     for (const t of r.touches) {
-      if (t.dist > 250) continue;
+      if (t.dist > (PEAKS.find((pk) => pk.id === t.peak)?.reach ?? 250)) continue;   // route must reach the summit
       for (const end of [0, r.count - 1]) {
         const step = end < t.index ? 1 : -1;
         let len = 0, dplus = 0, lastH = demBil(routePts[2 * (r.offset + end)], routePts[2 * (r.offset + end) + 1]), acc = 0;
@@ -273,7 +273,7 @@ export function bakeOsm({ quiet = false } = {}) {
         }
         const sx = routePts[2 * (r.offset + end)], sz = routePts[2 * (r.offset + end) + 1];
         const h0 = demBil(sx, sz), h1 = demBil(routePts[2 * (r.offset + t.index)], routePts[2 * (r.offset + t.index) + 1]);
-        if (len < 300 || h1 - h0 < 120 || !inCrop(sx, sz, -150)) continue;   // trailhead must be inside the scene
+        if (len < 250 || h1 - h0 < 60 || !inCrop(sx, sz, -150)) continue;   // trailhead must be inside the scene
         const fromEnd = (end === 0) === r.fromAtStart;
         const est = (() => { const h = len / 4000, v = dplus / 400; return Math.round((Math.max(h, v) + Math.min(h, v) / 2) * 60); })();
         const fullDur = Math.max(parseDur(r.durF), parseDur(r.durB));
