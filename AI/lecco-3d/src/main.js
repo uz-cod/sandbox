@@ -22,6 +22,9 @@ const opts = {
   onProgress: (msg) => { status.textContent = msg; },
   offscreen: params.has('shot'),
   trees: params.get('trees') !== '0',
+  // a different sky every load: random cloud field and a coverage between 'a few' and 'half'
+  clouds: params.has('clouds') ? Number(params.get('clouds')) : 0.25 + Math.random() * 0.3,
+  cloudSeed: params.has('seed') ? [Number(params.get('seed')) * 7919, Number(params.get('seed')) * 3571] : [Math.random() * 50000, Math.random() * 50000],
 };
 const shotMode = params.has('shot');
 if (params.get('hud') === '0') document.body.classList.add('nohud');
@@ -321,6 +324,13 @@ function buildUI() {
     if (e.code === 'KeyH') document.body.classList.toggle('nohud');
     if (e.code === 'KeyV' && activePeak >= 0) overview(activePeak);
     if (e.code === 'KeyP' && !follow.active) { if (auto.mode) stopAuto(); else startPanorama(); }
+    if (e.code === 'KeyN') {
+      const steps = [0, 0.2, 0.35, 0.5, 0.65];
+      const i = steps.findIndex((v) => v >= opts.clouds - 0.01);
+      opts.clouds = steps[(i + 1) % steps.length];
+      renderer.setClouds(opts.clouds);
+      toast(opts.clouds ? `Nuvole: ${Math.round(opts.clouds * 100)}%` : 'Cielo sereno');
+    }
     if (e.code === 'KeyB') { opts.trees = !opts.trees; renderer.setTrees(opts.trees); toast(opts.trees ? 'Boschi attivi' : 'Boschi nascosti'); }
     if (follow.active) {
       if (e.code === 'KeyF' || e.code === 'Escape') endFollow();

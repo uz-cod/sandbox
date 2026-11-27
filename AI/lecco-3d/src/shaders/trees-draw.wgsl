@@ -24,6 +24,7 @@ fn shadeTree(world: vec3f, n: vec3f, albedo: vec3f, ao: f32, foliage: f32) -> ve
     let sh = textureSampleLevel(shadeTexD, linSampD, uv, 0.0);
     sunVis = sh.r; tao = mix(sh.g, 1.0, 0.5);
   }
+  sunVis *= cloudShadow(world);
   let ndl = dot(n, L);
   let diff = mix(max(ndl, 0.0), max(ndl * 0.75 + 0.25, 0.0), foliage) * mix(1.0, 0.85, foliage);   // mild wrap on leaves
   let trans = pow(max(dot(-V, L), 0.0), 4.0) * 0.35 * foliage;               // back-lit leaves glow
@@ -50,9 +51,7 @@ fn vsTreeMesh(@location(0) lp: vec3f, @location(1) ln: vec3f, @location(2) part:
   let H = ip.w;
   let sx = 0.85 + 0.3 * info.y;
   let sz = 0.85 + 0.3 * fract(info.y * 7.31);
-  var l = lp * vec3f(H * sx, H, H * sz);
-  let sway = lp.y * lp.y * 0.010 * H * sin(F.camPos.w * 1.3 + info.z * 3.0 + ip.x * 0.05) * part;
-  l.x += sway;
+  let l = lp * vec3f(H * sx, H, H * sz);
   let w = ip.xyz + rotY(l, info.z);
   var o: MOut;
   o.pos = F.viewProj * vec4f(w - F.camPos.xyz, 1.0);

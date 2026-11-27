@@ -13,6 +13,7 @@ struct Frame {
   fog: vec4f,            // density at 200 m, height falloff, exposure, detail strength
   misc: vec4f,           // snow line, relief scale, debug view, unused
   grid: vec4f,           // OSM feature grid: origin x, origin z, cell size, cells per side
+  clouds: vec4f,         // random offset x, z, coverage (0 = clear), unused
 };
 
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -209,4 +210,29 @@ fn urbanWeight(p: vec3f, nb: vec3f) -> f32 {
   let towns = noise(p.xz / 1500.0) * 0.75 + noise(p.xz / 380.0 + 5.0) * 0.35 - 0.22;
   let lecco = exp(-dot(p.xz - LECCO_XZ, p.xz - LECCO_XZ) / (2.0 * 1300.0 * 1300.0));
   return flat * low * smoothstep(0.05, 0.5, towns + lecco * 0.95);
+}
+
+// ---------------------------------------------------------------- clouds
+// One layer of drifting cumulus at CLOUD_H, density from a seeded fbm (a new sky every load).
+const CLOUD_H: f32 = 3200.0;
+fn cloudDensity(xz: vec2f) -> f32 {
+  if (F.clouds.z <= 0.0) { return 0.0; }
+  var p = (xz + F.clouds.xy + vec2f(7.0, 2.5) * F.camPos.w) / 1300.0;
+  var v = 0.0;
+  var a = 0.5;
+  for (var o = 0; o < 5; o++) {
+    v += noise(p) * a;
+    p = ROT * p * 2.1;
+    a *= 0.5;
+  }
+  // fbm sits mostly in 0.3..0.7: coverage moves a narrow threshold -> separate cumulus with crisp edges
+  let th = 0.66 - F.clouds.z * 0.28;
+  return smoothstep(th, th + 0.07, v * 0.5 + 0.5);
+}
+// Fraction of sunlight that gets through the cloud layer above p.
+fn cloudShadow(p: vec3f) -> f32 {
+  let L = F.sunDir.xyz;
+  if (F.clouds.z <= 0.0 || L.y <= 0.02 || p.y > CLOUD_H) { return 1.0; }
+  let q = p.xz + L.xz / L.y * (CLOUD_H - p.y);
+  return 1.0 - 0.7 * cloudDensity(q);
 }

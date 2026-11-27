@@ -114,6 +114,7 @@ fn fsBuild(i: BOut) -> @location(0) vec4f {
     let sh = textureSampleLevel(shadeTexB, linSampB, uv, 0.0);
     sunVis = sh.r; ao = mix(sh.g, 1.0, 0.4);
   }
+  sunVis *= cloudShadow(p);
   let s = buildingSurf(i);
   // contact darkening near the ground
   let grounded = mix(0.55, 1.0, smoothstep(-0.2, 1.2, i.uv.y));

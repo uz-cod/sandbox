@@ -24,6 +24,7 @@ No server needed.
 | / | search huts and bivouacs by name, Enter flies there |
 | (on a trail) 2–12 km/h · +/− | walking pace |
 | B | forests on/off |
+| N | clouds: clear → few → half (a new random sky every load; `clouds=0..1`, `seed=` in the URL) |
 | (on a trail) Space · W/S · Shift · F | pause/resume · forward/back · run · leave the trail |
 | H | hide the interface |
 

@@ -257,6 +257,7 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4f {
     }
     }
   }
+  sunVis *= cloudShadow(p);
   let ndl = max(dot(n, Ls), 0.0);
   // wrap a little on snow (subsurface-ish), sharper on rock
   let diff = mix(ndl, max((dot(n, Ls) + 0.25) / 1.25, 0.0), surf.snow * 0.6);
